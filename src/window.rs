@@ -15,42 +15,20 @@ use pathfinder_geometry::transform3d::{Perspective, Transform4F};
 use pathfinder_geometry::vector::Vector2I;
 use pathfinder_resources::ResourceLoader;
 use rayon::ThreadPoolBuilder;
-use std::path::PathBuf;
 
-#[cfg(all(target_os = "macos", not(feature = "pf-gl")))]
-use io_surface::IOSurfaceRef;
-#[cfg(all(target_os = "macos", not(feature = "pf-gl")))]
-use metal::Device as MetalDevice;
-#[cfg(all(target_os = "macos", not(feature = "pf-gl")))]
-use pathfinder_metal::MetalDevice as PathfinderMetalDevice;
-
-#[cfg(any(not(target_os = "macos"), feature = "pf-gl"))]
 use gl::types::GLuint;
-#[cfg(any(not(target_os = "macos"), feature = "pf-gl"))]
 use pathfinder_gl::{GLDevice, GLVersion};
 
 pub trait Window {
-    #[cfg(any(not(target_os = "macos"), feature = "pf-gl"))]
     fn gl_version(&self) -> GLVersion;
-    #[cfg(any(not(target_os = "macos"), feature = "pf-gl"))]
     fn gl_default_framebuffer(&self) -> GLuint { 0 }
-    #[cfg(any(not(target_os = "macos"), feature = "pf-gl"))]
     fn present(&mut self, device: &mut GLDevice);
-
-    #[cfg(all(target_os = "macos", not(feature = "pf-gl")))]
-    fn metal_device(&self) -> MetalDevice;
-    #[cfg(all(target_os = "macos", not(feature = "pf-gl")))]
-    fn metal_io_surface(&self) -> IOSurfaceRef;
-    #[cfg(all(target_os = "macos", not(feature = "pf-gl")))]
-    fn present(&mut self, device: &mut PathfinderMetalDevice);
 
     fn make_current(&mut self, view: View);
     fn viewport(&self, view: View) -> RectI;
     fn resource_loader(&self) -> &dyn ResourceLoader;
     fn create_user_event_id(&self) -> u32;
     fn push_user_event(message_type: u32, message_data: u32);
-    fn present_open_svg_dialog(&mut self);
-    fn run_save_dialog(&self, extension: &str) -> Result<PathBuf, ()>;
 
     fn adjust_thread_pool_settings(&self, builder: ThreadPoolBuilder) -> ThreadPoolBuilder {
         builder
@@ -71,7 +49,6 @@ pub enum Event {
         yaw: f32,
     },
     SetEyeTransforms(Vec<OcularTransform>),
-    OpenData(DataPath),
     User {
         message_type: u32,
         message_data: u32,
@@ -111,11 +88,4 @@ pub struct OcularTransform {
 
     // The view transform which converts from world coordinates to camera coordinates
     pub modelview_to_eye: Transform4F,
-}
-
-#[derive(Clone)]
-pub enum DataPath {
-    Default,
-    Resource(String),
-    Path(PathBuf),
 }

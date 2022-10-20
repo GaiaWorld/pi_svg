@@ -21,7 +21,6 @@ use pathfinder_content::pattern::Pattern;
 use pathfinder_content::render_target::RenderTargetId;
 use pathfinder_export::{Export, FileFormat};
 use pathfinder_geometry::rect::{RectF, RectI};
-use pathfinder_geometry::transform2d::Transform2F;
 use pathfinder_geometry::transform3d::Transform4F;
 use pathfinder_geometry::vector::{vec2f, vec2i, Vector2F, Vector2I, Vector4F};
 use pathfinder_gpu::Device;
@@ -42,7 +41,7 @@ use std::thread;
 use std::time::Duration;
 use ui::{DemoUIModel, DemoUIPresenter, ScreenshotInfo, ScreenshotType, UIAction};
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
-use window::{DataPath, Event, Keycode, Window, WindowSize};
+use window::{Event, Keycode, Window, WindowSize};
 
 #[cfg(any(not(target_os = "macos"), feature = "pf-gl"))]
 use pathfinder_gl::GLDevice as DeviceImpl;
@@ -50,8 +49,6 @@ use pathfinder_gl::GLDevice as DeviceImpl;
 use pathfinder_metal::MetalDevice as DeviceImpl;
 
 use self::camera::Mode;
-
-static DEFAULT_SVG_VIRTUAL_PATH: &'static str = "svg/Ghostscript_Tiger.svg";
 
 const MOUSELOOK_ROTATION_SPEED: f32 = 0.007;
 const CAMERA_VELOCITY: f32 = 0.02;
@@ -273,10 +270,6 @@ where
         };
 
         self.scene_proxy.build(build_options);
-        /*
-        self.render_command_stream =
-            Some(self.scene_proxy.build_with_stream(build_options, self.renderer.gpu_features()));
-            */
     }
 
     fn handle_events(&mut self, events: Vec<Event>) -> Vec<UIEvent> {
@@ -442,31 +435,6 @@ where
                     }
                 }
 
-                Event::OpenData(ref data_path) => {
-                    let viewport = self.window.viewport(self.ui_model.mode.view(0));
-                    let filter = build_filter(&self.ui_model);
-                    self.svg = load_scene(self.window.resource_loader(), data_path);
-
-                    let scene = build_svg_tree(&self.svg, viewport.size(), filter);
-                    let message = get_svg_building_message(&scene);
-                    let mut scene = scene.scene;
-
-                    self.ui_model.message = message;
-
-                    let viewport_size = self.window.viewport(self.ui_model.mode.view(0)).size();
-                    self.scene_metadata =
-                        SceneMetadata::new_clipping_view_box(&mut scene, viewport_size);
-                    self.camera = Camera::new(
-                        self.ui_model.mode,
-                        self.scene_metadata.view_box,
-                        viewport_size,
-                    );
-
-                    self.scene_proxy.replace_scene(scene);
-
-                    self.dirty = true;
-                }
-
                 Event::User {
                     message_type: event_id,
                     message_data: expected_epoch,
@@ -528,8 +496,6 @@ where
             );
         }
 
-        self.handle_ui_events(frame, &mut ui_action);
-
         self.renderer.device().end_commands();
 
         self.window.present(self.renderer.device_mut());
@@ -556,105 +522,13 @@ where
             }
         }
     }
-
-    fn handle_ui_events(&mut self, mut frame: Frame, ui_action: &mut UIAction) {
-        frame.ui_events = self
-            .renderer
-            .debug_ui_presenter_mut()
-            .debug_ui_presenter
-            .ui_presenter
-            .event_queue
-            .drain();
-
-        self.handle_ui_action(ui_action);
-
-        // Switch camera mode (2D/3D) if requested.
-        //
-        // FIXME(pcwalton): This should really be an MVC setup.
-        if self.camera.mode() != self.ui_model.mode {
-            let viewport_size = self.window.viewport(self.ui_model.mode.view(0)).size();
-            self.camera = Camera::new(
-                self.ui_model.mode,
-                self.scene_metadata.view_box,
-                viewport_size,
-            );
-        }
-
-        for ui_event in frame.ui_events {
-            match ui_event {
-                UIEvent::MouseDown(_) if self.camera.is_3d() => {
-                    // If nothing handled the mouse-down event, toggle mouselook.
-                    self.mouselook_enabled = !self.mouselook_enabled;
-                }
-                UIEvent::MouseDragged(position) => {
-                    if let Camera::TwoD(ref mut transform) = self.camera {
-                        *transform = transform.translate(position.relative.to_f32());
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn handle_ui_action(&mut self, ui_action: &mut UIAction) {
-        // match ui_action {
-        //     UIAction::None => {}
-        //     UIAction::ModelChanged => self.dirty = true,
-        //     UIAction::EffectsChanged => {
-        //         let viewport_size = self.window.viewport(self.ui_model.mode.view(0)).size();
-        //         let filter = build_filter(&self.ui_model);
-
-        //         let (mut scene, _) = self.content.render(viewport_size, filter);
-        //         self.scene_metadata =
-        //             SceneMetadata::new_clipping_view_box(&mut scene, viewport_size);
-        //         self.scene_proxy.replace_scene(scene);
-        //         self.dirty = true;
-        //     }
-        //     UIAction::TakeScreenshot(ref info) => {
-        //         self.pending_screenshot_info = Some((*info).clone());
-        //         self.dirty = true;
-        //     }
-        //     UIAction::ZoomIn => {
-        //         if let Camera::TwoD(ref mut transform) = self.camera {
-        //             let scale = 1.0 + CAMERA_ZOOM_AMOUNT_2D;
-        //             let center = center_of_window(&self.window_size);
-        //             *transform = transform.translate(-center).scale(scale).translate(center);
-        //             self.dirty = true;
-        //         }
-        //     }
-        //     UIAction::ZoomOut => {
-        //         if let Camera::TwoD(ref mut transform) = self.camera {
-        //             let scale = 1.0 - CAMERA_ZOOM_AMOUNT_2D;
-        //             let center = center_of_window(&self.window_size);
-        //             *transform = transform.translate(-center).scale(scale).translate(center);
-        //             self.dirty = true;
-        //         }
-        //     }
-        //     UIAction::ZoomActualSize => {
-        //         if let Camera::TwoD(ref mut transform) = self.camera {
-        //             *transform = Transform2F::default();
-        //             self.dirty = true;
-        //         }
-        //     }
-        //     UIAction::Rotate(theta) => {
-        //         if let Camera::TwoD(ref mut transform) = self.camera {
-        //             let old_rotation = transform.rotation();
-        //             let center = center_of_window(&self.window_size);
-        //             *transform = transform
-        //                 .translate(-center)
-        //                 .rotate(*theta - old_rotation)
-        //                 .translate(center);
-        //         }
-        //     }
-        // }
-    }
 }
 
 #[derive(Clone)]
 pub struct Options {
     pub jobs: Option<usize>,
     pub mode: Mode,
-    pub input_path: DataPath,
+    pub input_path: PathBuf,
     pub ui: UIVisibility,
     pub background_color: BackgroundColor,
     pub high_performance_gpu: bool,
@@ -667,7 +541,7 @@ impl Default for Options {
         Options {
             jobs: None,
             mode: Mode::TwoD,
-            input_path: DataPath::Default,
+            input_path: PathBuf::from(""),
             ui: UIVisibility::All,
             background_color: BackgroundColor::Light,
             high_performance_gpu: false,
@@ -778,7 +652,7 @@ impl Options {
         }
 
         if let Some(path) = matches.value_of("INPUT") {
-            self.input_path = DataPath::Path(PathBuf::from(path));
+            self.input_path = PathBuf::from(path);
         };
     }
 }
@@ -790,12 +664,8 @@ pub enum UIVisibility {
     All,
 }
 
-fn load_scene(resource_loader: &dyn ResourceLoader, input_path: &DataPath) -> SvgTree {
-    let data = match *input_path {
-        DataPath::Default => resource_loader.slurp(DEFAULT_SVG_VIRTUAL_PATH).unwrap(),
-        DataPath::Resource(ref name) => resource_loader.slurp(name).unwrap(),
-        DataPath::Path(ref path) => std::fs::read(path).unwrap().into(),
-    };
+fn load_scene(resource_loader: &dyn ResourceLoader, input_path: &PathBuf) -> SvgTree {
+    let data: Vec<u8> = std::fs::read(input_path).unwrap().into();
 
     if let Ok(tree) = SvgTree::from_data(&data, &UsvgOptions::default()) {
         tree

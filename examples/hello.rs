@@ -7,7 +7,7 @@ use pathfinder_geometry::rect::RectI;
 use pathfinder_geometry::vector::{vec2i, Vector2I};
 use pathfinder_resources::fs::FilesystemResourceLoader;
 use pathfinder_resources::ResourceLoader;
-use pi_svg::window::{DataPath, Event, Keycode, View, Window, WindowSize};
+use pi_svg::window::{Event, Keycode, View, Window, WindowSize};
 use pi_svg::{DemoApp, Options};
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -38,6 +38,7 @@ fn main() {
     // Read command line options.
     let mut options = Options::default();
     options.command_line_overrides();
+    options.input_path = PathBuf::from("./examples/Ghostscript_Tiger.svg");
 
     let window = WindowImpl::new(&options);
     let window_size = window.size();
@@ -95,7 +96,6 @@ enum CustomEvent {
         message_type: u32,
         message_data: u32,
     },
-    OpenData(PathBuf),
 }
 
 impl Window for WindowImpl {
@@ -147,14 +147,6 @@ impl Window for WindowImpl {
         &self.resource_loader
     }
 
-    fn present_open_svg_dialog(&mut self) {
-        unimplemented!()
-    }
-
-    fn run_save_dialog(&self, extension: &str) -> Result<PathBuf, ()> {
-        unimplemented!()
-    }
-
     fn create_user_event_id(&self) -> u32 {
         let id = self.next_user_event_id.get();
         self.next_user_event_id.set(id + 1);
@@ -175,7 +167,6 @@ impl Window for WindowImpl {
 }
 
 impl WindowImpl {
-    #[cfg(any(not(target_os = "macos"), feature = "pf-gl"))]
     fn new(options: &Options) -> WindowImpl {
         let event_loop = EventsLoop::new();
         let window_size = Size2D::new(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT);
@@ -315,9 +306,6 @@ fn convert_winit_event(
                 .pop_front()
                 .expect("`Awakened` with no pending custom event!")
             {
-                CustomEvent::OpenData(data_path) => {
-                    Some(Event::OpenData(DataPath::Path(data_path)))
-                }
                 CustomEvent::User {
                     message_data,
                     message_type,

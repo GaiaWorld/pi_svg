@@ -199,7 +199,7 @@ impl<D> DemoUIPresenter<D> where D: Device {
                              .draw_button(device, allocator, position, &self.open_texture) {
             // FIXME(pcwalton): This is not sufficient for Android, where we will need to take in
             // the contents of the file.
-            window.present_open_svg_dialog();
+            // window.present_open_svg_dialog();
         }
         debug_ui_presenter.ui_presenter.draw_tooltip(device,
                                                      allocator,
@@ -560,12 +560,6 @@ impl<D> DemoUIPresenter<D> where D: Device {
                                &text,
                                widget_rect,
                                false) {
-            // FIXME(pcwalton): This is not sufficient for Android, where we will need to take in
-            // the contents of the file.
-            if let Ok(path) = window.run_save_dialog(screenshot_type.extension()) {
-                self.screenshot_panel_visible = false;
-                *action = UIAction::TakeScreenshot(ScreenshotInfo { kind: screenshot_type, path });
-            }
         }
     }
 

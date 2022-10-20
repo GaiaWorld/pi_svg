@@ -1,0 +1,39 @@
+[package]
+name = "pi_svg"
+version = "0.1.0"
+authors = ["moyy <dev@dev.com>"]
+edition = "2021"
+
+[dependencies]
+log = "0.4"
+thiserror = "1.0"
+
+clap = "2.32"
+gl = "0.14"
+rayon = "1.0"
+usvg = "0.9"
+image = { version = "0.23", default-features = false, features = ["png"] }
+
+pathfinder_color = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_content = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_export = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_geometry = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_gl = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_gpu = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_renderer = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_resources = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_simd = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_svg = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_ui = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+
+[dev-dependencies]
+winit = { version = "<0.19.4" } # 0.19.4 causes build errors https://github.com/rust-windowing/winit/pull/1105
+surfman = { git = "https://github.com/servo/surfman", rev = "f3df871ac8c3926fe9106d86a3e51e20aa50d3cc", features = [
+    "sm-winit",
+    "sm-x11",
+] }
+
+euclid = { version = "0.21.0", features = [] }
+lazy_static = "1.0"
+pretty_env_logger = "0.4"
+color-backtrace = "0.3"

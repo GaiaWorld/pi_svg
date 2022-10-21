@@ -39,7 +39,7 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
-use ui::{DemoUIModel, DemoUIPresenter, ScreenshotInfo, ScreenshotType, UIAction};
+use ui::{DemoUIModel, ScreenshotInfo, ScreenshotType};
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
 use window::{Event, Keycode, Window, WindowSize};
 
@@ -90,17 +90,13 @@ where
     camera: Camera,
     frame_counter: u32,
     pending_screenshot_info: Option<ScreenshotInfo>,
-    mouselook_enabled: bool,
+
     pub dirty: bool,
-    expire_message_event_id: u32,
-    message_epoch: u32,
-    last_mouse_position: Vector2I,
 
     current_frame: Option<Frame>,
 
     ui_model: DemoUIModel,
-    ui_presenter: DemoUIPresenter<DeviceImpl>,
-
+    // ui_presenter: DemoUIPresenter<DeviceImpl>,
     scene_proxy: SceneProxy,
     renderer: Renderer<DeviceImpl>,
 
@@ -115,17 +111,7 @@ where
     W: Window,
 {
     pub fn new(window: W, window_size: WindowSize, options: Options) -> DemoApp<W> {
-        let expire_message_event_id = window.create_user_event_id();
-
-        let device;
-        #[cfg(all(target_os = "macos", not(feature = "pf-gl")))]
-        unsafe {
-            device = DeviceImpl::new(window.metal_device(), window.metal_io_surface());
-        }
-        #[cfg(any(not(target_os = "macos"), feature = "pf-gl"))]
-        {
-            device = DeviceImpl::new(window.gl_version(), window.gl_default_framebuffer());
-        }
+        let device = DeviceImpl::new(window.gl_version(), window.gl_default_framebuffer());
 
         let resources = window.resource_loader();
 
@@ -174,15 +160,7 @@ where
             &renderer.quad_vertex_indices_buffer(),
         );
 
-        let mut message_epoch = 0;
-        emit_message::<W>(
-            &mut ui_model,
-            &mut message_epoch,
-            expire_message_event_id,
-            message,
-        );
-
-        let ui_presenter = DemoUIPresenter::new(renderer.device(), resources);
+        // let ui_presenter = DemoUIPresenter::new(renderer.device(), resources);
 
         DemoApp {
             window,
@@ -198,15 +176,11 @@ where
             camera,
             frame_counter: 0,
             pending_screenshot_info: None,
-            mouselook_enabled: false,
+
             dirty: true,
-            expire_message_event_id,
-            message_epoch,
-            last_mouse_position: Vector2I::default(),
 
             current_frame: None,
 
-            ui_presenter,
             ui_model,
 
             scene_proxy,
@@ -219,12 +193,9 @@ where
         }
     }
 
-    pub fn prepare_frame(&mut self, events: Vec<Event>) -> u32 {
+    pub fn prepare_frame(&mut self) -> u32 {
         // Clear dirty flag.
         self.dirty = false;
-
-        // Handle events.
-        let ui_events = self.handle_events(events);
 
         // Update the scene.
         self.build_scene();
@@ -233,7 +204,7 @@ where
         //
         // FIXME(pcwalton): This is super ugly.
         let transform = self.render_transform.clone().unwrap();
-        self.current_frame = Some(Frame::new(transform, ui_events));
+        self.current_frame = Some(Frame::new(transform));
 
         // Prepare to render the frame.
         self.prepare_frame_rendering()
@@ -241,20 +212,6 @@ where
 
     fn build_scene(&mut self) {
         self.render_transform = match self.camera {
-            Camera::ThreeD {
-                ref scene_transform,
-                ref mut modelview_transform,
-                ref mut velocity,
-                ..
-            } => {
-                if modelview_transform.offset(*velocity) {
-                    self.dirty = true;
-                }
-                let perspective = scene_transform.perspective
-                    * scene_transform.modelview_to_eye
-                    * modelview_transform.to_transform();
-                Some(RenderTransform::Perspective(perspective))
-            }
             Camera::TwoD(transform) => Some(RenderTransform::Transform2D(transform)),
         };
 
@@ -272,228 +229,17 @@ where
         self.scene_proxy.build(build_options);
     }
 
-    fn handle_events(&mut self, events: Vec<Event>) -> Vec<UIEvent> {
-        let mut ui_events = vec![];
-        self.dirty = false;
-
-        for event in events {
-            match event {
-                Event::Quit { .. } | Event::KeyDown(Keycode::Escape) => {
-                    self.should_exit = true;
-                    self.dirty = true;
-                }
-                Event::WindowResized(new_size) => {
-                    self.window_size = new_size;
-                    let viewport = self.window.viewport(self.ui_model.mode.view(0));
-                    self.scene_proxy
-                        .set_view_box(RectF::new(Vector2F::zero(), viewport.size().to_f32()));
-                    self.renderer.options_mut().dest =
-                        DestFramebuffer::full_window(self.window_size.device_size());
-                    self.renderer.dest_framebuffer_size_changed();
-                    self.dirty = true;
-                }
-                Event::MouseDown(new_position) => {
-                    let mouse_position = self.process_mouse_position(new_position);
-                    ui_events.push(UIEvent::MouseDown(mouse_position));
-                }
-                Event::MouseMoved(new_position) if self.mouselook_enabled => {
-                    let mouse_position = self.process_mouse_position(new_position);
-                    if let Camera::ThreeD {
-                        ref mut modelview_transform,
-                        ..
-                    } = self.camera
-                    {
-                        let rotation = mouse_position.relative.to_f32() * MOUSELOOK_ROTATION_SPEED;
-                        modelview_transform.yaw += rotation.x();
-                        modelview_transform.pitch += rotation.y();
-                        self.dirty = true;
-                    }
-                }
-                Event::MouseDragged(new_position) => {
-                    let mouse_position = self.process_mouse_position(new_position);
-                    ui_events.push(UIEvent::MouseDragged(mouse_position));
-                    self.dirty = true;
-                }
-                Event::Zoom(d_dist, position) => {
-                    if let Camera::TwoD(ref mut transform) = self.camera {
-                        let backing_scale_factor = self.window_size.backing_scale_factor;
-                        let position = position.to_f32() * backing_scale_factor;
-                        let scale_delta = 1.0 + d_dist * CAMERA_SCALE_SPEED_2D;
-                        *transform = transform
-                            .translate(-position)
-                            .scale(scale_delta)
-                            .translate(position);
-                    }
-                }
-                Event::Look { pitch, yaw } => {
-                    if let Camera::ThreeD {
-                        ref mut modelview_transform,
-                        ..
-                    } = self.camera
-                    {
-                        modelview_transform.pitch += pitch;
-                        modelview_transform.yaw += yaw;
-                    }
-                }
-                Event::SetEyeTransforms(new_eye_transforms) => {
-                    if let Camera::ThreeD {
-                        ref mut scene_transform,
-                        ref mut eye_transforms,
-                        ..
-                    } = self.camera
-                    {
-                        *eye_transforms = new_eye_transforms;
-                        // Calculate the new scene transform by lerp'ing the eye transforms.
-                        *scene_transform = eye_transforms[0];
-                        for (index, eye_transform) in eye_transforms.iter().enumerate().skip(1) {
-                            let weight = 1.0 / (index + 1) as f32;
-                            scene_transform.perspective.transform = scene_transform
-                                .perspective
-                                .transform
-                                .lerp(weight, &eye_transform.perspective.transform);
-                            scene_transform.modelview_to_eye = scene_transform
-                                .modelview_to_eye
-                                .lerp(weight, &eye_transform.modelview_to_eye);
-                        }
-                        // TODO: calculate the eye offset from the eye transforms?
-                        let z_offset =
-                            -DEFAULT_EYE_OFFSET * scene_transform.perspective.transform.c0.x();
-                        let z_offset = Vector4F::new(0.0, 0.0, z_offset, 1.0);
-                        scene_transform.modelview_to_eye = Transform4F::from_translation(z_offset)
-                            * scene_transform.modelview_to_eye;
-                    }
-                }
-                Event::KeyDown(Keycode::Alphanumeric(b'w')) => {
-                    if let Camera::ThreeD {
-                        ref mut velocity, ..
-                    } = self.camera
-                    {
-                        let scale_factor =
-                            camera::scale_factor_for_view_box(self.scene_metadata.view_box);
-                        velocity.set_z(-CAMERA_VELOCITY / scale_factor);
-                        self.dirty = true;
-                    }
-                }
-                Event::KeyDown(Keycode::Alphanumeric(b's')) => {
-                    if let Camera::ThreeD {
-                        ref mut velocity, ..
-                    } = self.camera
-                    {
-                        let scale_factor =
-                            camera::scale_factor_for_view_box(self.scene_metadata.view_box);
-                        velocity.set_z(CAMERA_VELOCITY / scale_factor);
-                        self.dirty = true;
-                    }
-                }
-                Event::KeyDown(Keycode::Alphanumeric(b'a')) => {
-                    if let Camera::ThreeD {
-                        ref mut velocity, ..
-                    } = self.camera
-                    {
-                        let scale_factor =
-                            camera::scale_factor_for_view_box(self.scene_metadata.view_box);
-                        velocity.set_x(-CAMERA_VELOCITY / scale_factor);
-                        self.dirty = true;
-                    }
-                }
-                Event::KeyDown(Keycode::Alphanumeric(b'd')) => {
-                    if let Camera::ThreeD {
-                        ref mut velocity, ..
-                    } = self.camera
-                    {
-                        let scale_factor =
-                            camera::scale_factor_for_view_box(self.scene_metadata.view_box);
-                        velocity.set_x(CAMERA_VELOCITY / scale_factor);
-                        self.dirty = true;
-                    }
-                }
-                Event::KeyUp(Keycode::Alphanumeric(b'w'))
-                | Event::KeyUp(Keycode::Alphanumeric(b's')) => {
-                    if let Camera::ThreeD {
-                        ref mut velocity, ..
-                    } = self.camera
-                    {
-                        velocity.set_z(0.0);
-                        self.dirty = true;
-                    }
-                }
-                Event::KeyUp(Keycode::Alphanumeric(b'a'))
-                | Event::KeyUp(Keycode::Alphanumeric(b'd')) => {
-                    if let Camera::ThreeD {
-                        ref mut velocity, ..
-                    } = self.camera
-                    {
-                        velocity.set_x(0.0);
-                        self.dirty = true;
-                    }
-                }
-                Event::KeyDown(Keycode::Tab) => {
-                    self.options.ui = match self.options.ui {
-                        UIVisibility::None => UIVisibility::Stats,
-                        UIVisibility::Stats => UIVisibility::All,
-                        UIVisibility::All => UIVisibility::None,
-                    }
-                }
-
-                Event::User {
-                    message_type: event_id,
-                    message_data: expected_epoch,
-                } if event_id == self.expire_message_event_id
-                    && expected_epoch as u32 == self.message_epoch =>
-                {
-                    self.ui_model.message = String::new();
-                    self.dirty = true;
-                }
-                _ => continue,
-            }
-        }
-
-        ui_events
-    }
-
-    fn process_mouse_position(&mut self, new_position: Vector2I) -> MousePosition {
-        let absolute = (new_position.to_f32() * self.window_size.backing_scale_factor).to_i32();
-        let relative = absolute - self.last_mouse_position;
-        self.last_mouse_position = absolute;
-        MousePosition { absolute, relative }
-    }
-
     pub fn finish_drawing_frame(&mut self) {
         self.maybe_take_screenshot();
 
         let frame = self.current_frame.take().unwrap();
-        for ui_event in &frame.ui_events {
-            self.dirty = true;
-            self.renderer
-                .debug_ui_presenter_mut()
-                .debug_ui_presenter
-                .ui_presenter
-                .event_queue
-                .push(*ui_event);
-        }
-
-        self.renderer
-            .debug_ui_presenter_mut()
-            .debug_ui_presenter
-            .ui_presenter
-            .mouse_position =
-            self.last_mouse_position.to_f32() * self.window_size.backing_scale_factor;
-
-        let mut ui_action = UIAction::None;
+        
         if self.options.ui == UIVisibility::All {
             let DebugUIPresenterInfo {
                 device,
                 allocator,
                 debug_ui_presenter,
             } = self.renderer.debug_ui_presenter_mut();
-            self.ui_presenter.update(
-                device,
-                allocator,
-                &mut self.window,
-                debug_ui_presenter,
-                &mut ui_action,
-                &mut self.ui_model,
-            );
         }
 
         self.renderer.device().end_commands();
@@ -617,12 +363,6 @@ impl Options {
             self.jobs = jobs.parse().ok();
         }
 
-        if matches.is_present("3d") {
-            self.mode = Mode::ThreeD;
-        } else if matches.is_present("vr") {
-            self.mode = Mode::VR;
-        }
-
         if let Some(ui) = matches.value_of("ui") {
             self.ui = match ui {
                 "none" => UIVisibility::None,
@@ -742,37 +482,14 @@ fn get_svg_building_message(built_svg: &SVGScene) -> String {
     )
 }
 
-fn emit_message<W>(
-    ui_model: &mut DemoUIModel,
-    message_epoch: &mut u32,
-    expire_message_event_id: u32,
-    message: String,
-) where
-    W: Window,
-{
-    if message.is_empty() {
-        return;
-    }
-
-    ui_model.message = message;
-    let expected_epoch = *message_epoch + 1;
-    *message_epoch = expected_epoch;
-    thread::spawn(move || {
-        thread::sleep(Duration::from_secs(MESSAGE_TIMEOUT_SECS));
-        W::push_user_event(expire_message_event_id, expected_epoch);
-    });
-}
-
 struct Frame {
     transform: RenderTransform,
-    ui_events: Vec<UIEvent>,
 }
 
 impl Frame {
-    fn new(transform: RenderTransform, ui_events: Vec<UIEvent>) -> Frame {
+    fn new(transform: RenderTransform) -> Frame {
         Frame {
             transform,
-            ui_events,
         }
     }
 }

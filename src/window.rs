@@ -27,8 +27,6 @@ pub trait Window {
     fn make_current(&mut self, view: View);
     fn viewport(&self, view: View) -> RectI;
     fn resource_loader(&self) -> &dyn ResourceLoader;
-    fn create_user_event_id(&self) -> u32;
-    fn push_user_event(message_type: u32, message_data: u32);
 
     fn adjust_thread_pool_settings(&self, builder: ThreadPoolBuilder) -> ThreadPoolBuilder {
         builder

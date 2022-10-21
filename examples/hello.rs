@@ -17,15 +17,15 @@ const WINDOW_WIDTH: u32 = 1024;
 const WINDOW_HEIGHT: u32 = 768;
 
 fn main() {
-    color_backtrace::install();
     pretty_env_logger::init();
 
     let (window, event_loop) = WindowImpl::new();
     let window_size = window.size();
 
-    let mut options = Options::default();
-    options.input_path = PathBuf::from("./examples/Ghostscript_Tiger.svg");
-
+    let options = Options {
+        input_path: PathBuf::from("./examples/Ghostscript_Tiger.svg"),
+        ..Default::default()
+    };
     let app = DemoApp::new(window, window_size, options);
 
     run_loop(app, event_loop);
@@ -46,11 +46,8 @@ impl Window for WindowImpl {
             logical_size,
             backing_scale_factor,
         } = self.size();
-        let mut size = (logical_size.to_f32() * backing_scale_factor).to_i32();
-
-        let mut x_offset = 0;
-
-        RectI::new(vec2i(x_offset, 0), size)
+        let size = (logical_size.to_f32() * backing_scale_factor).to_i32();
+        RectI::new(vec2i(0, 0), size)
     }
 
     fn present(&mut self, _: &mut GLDevice) {
@@ -72,12 +69,10 @@ impl WindowImpl {
 
         let physical_window_size = PhysicalSize::new(WINDOW_WIDTH as f64, WINDOW_HEIGHT as f64);
 
-        // Open a window.
         let window_builder = WindowBuilder::new()
             .with_title("Minimal example")
             .with_inner_size(physical_window_size);
 
-        // Create an OpenGL 3.x context for Pathfinder to use.
         let render_context = ContextBuilder::new()
             .with_gl(GlRequest::Latest)
             .with_gl_profile(GlProfile::Core)
@@ -118,13 +113,11 @@ fn run_loop(mut app: DemoApp<WindowImpl>, event_loop: EventLoop<()>) {
                 app.window.render_context.window().request_redraw();
             }
             Event::RedrawRequested(_) => {
-                let scene_count = app.prepare_frame();
+                app.prepare_frame();
 
                 app.draw_scene();
                 app.begin_compositing();
-                for scene_index in 0..scene_count {
-                    app.composite_scene(scene_index);
-                }
+
                 app.finish_drawing_frame();
             }
             Event::WindowEvent {

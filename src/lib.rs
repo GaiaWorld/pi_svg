@@ -1,5 +1,3 @@
-use camera::Camera;
-use device::{GroundProgram, GroundVertexArray};
 use pathfinder_content::{
     effects::PatternFilter, outline::Outline, pattern::Pattern, render_target::RenderTargetId,
 };
@@ -19,14 +17,12 @@ use pathfinder_renderer::{
     paint::Paint,
     scene::{DrawPath, RenderTarget, Scene},
 };
-use pathfinder_resources::ResourceLoader;
 use pathfinder_svg::SVGScene;
+use renderer::Camera;
 use std::path::PathBuf;
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
 use window::{Window, WindowSize};
 
-mod camera;
-mod device;
 mod renderer;
 
 pub mod window;
@@ -41,9 +37,6 @@ where
     render_transform: Option<RenderTransform>,
 
     camera: Camera,
-    frame_counter: u32,
-
-    current_frame: Option<Frame>,
 
     scene_proxy: SceneProxy,
     renderer: Renderer<DeviceImpl>,
@@ -77,10 +70,15 @@ where
         let filter = None;
 
         let viewport = window.viewport();
-        let mut svg = load_scene(resources, &options.input_path);
+        let svg = load_scene(&options.input_path);
 
         let scene = build_svg_tree(&svg, viewport.size(), filter);
-        let message = get_svg_building_message(&scene);
+        if !scene.result_flags.is_empty() {
+            log::warn!(
+                "Warning: These features in the SVG are unsupported: {}.",
+                scene.result_flags
+            );
+        }
         let mut scene = scene.scene;
 
         let renderer = Renderer::new(device, resources, render_mode, render_options);
@@ -90,14 +88,6 @@ where
 
         let scene_proxy = SceneProxy::from_scene(scene, level, SequentialExecutor);
 
-        let ground_program = GroundProgram::new(renderer.device(), resources);
-        let ground_vertex_array = GroundVertexArray::new(
-            renderer.device(),
-            &ground_program,
-            &renderer.quad_vertex_positions_buffer(),
-            &renderer.quad_vertex_indices_buffer(),
-        );
-
         DemoApp {
             window,
             window_size,
@@ -105,9 +95,6 @@ where
             render_transform: None,
 
             camera,
-            frame_counter: 0,
-
-            current_frame: None,
 
             scene_proxy,
             renderer,
@@ -116,10 +103,6 @@ where
 
     pub fn prepare_frame(&mut self) -> u32 {
         self.build_scene();
-
-        let transform = self.render_transform.clone().unwrap();
-
-        self.current_frame = Some(Frame::new(transform));
 
         self.prepare_frame_rendering()
     }
@@ -137,20 +120,15 @@ where
     }
 
     pub fn finish_drawing_frame(&mut self) {
-        let frame = self.current_frame.take().unwrap();
-
         self.renderer.device().end_commands();
 
         self.window.present(self.renderer.device_mut());
-        self.frame_counter += 1;
     }
 }
 
 #[derive(Clone)]
 pub struct Options {
     pub input_path: PathBuf,
-    pub ui: UIVisibility,
-    pub background_color: BackgroundColor,
     pub high_performance_gpu: bool,
     pub renderer_level: Option<RendererLevel>,
 }
@@ -159,8 +137,6 @@ impl Default for Options {
     fn default() -> Self {
         Options {
             input_path: PathBuf::from(""),
-            ui: UIVisibility::None,
-            background_color: BackgroundColor::Light,
             high_performance_gpu: true,
             renderer_level: None,
         }
@@ -174,7 +150,7 @@ pub enum UIVisibility {
     All,
 }
 
-fn load_scene(resource_loader: &dyn ResourceLoader, input_path: &PathBuf) -> SvgTree {
+fn load_scene(input_path: &PathBuf) -> SvgTree {
     let data: Vec<u8> = std::fs::read(input_path).unwrap();
 
     if let Ok(tree) = SvgTree::from_data(&data, &UsvgOptions::default()) {
@@ -211,7 +187,7 @@ fn build_svg_tree(
         }
     });
 
-    let mut built_svg = SVGScene::from_tree_and_scene(&tree, scene);
+    let mut built_svg = SVGScene::from_tree_and_scene(tree, scene);
     if let Some(FilterInfo {
         filter,
         render_target_id,
@@ -238,54 +214,11 @@ fn build_svg_tree(
     }
 }
 
-fn center_of_window(window_size: &WindowSize) -> Vector2F {
-    window_size.device_size().to_f32() * 0.5
-}
-
-fn get_svg_building_message(built_svg: &SVGScene) -> String {
-    if built_svg.result_flags.is_empty() {
-        return String::new();
-    }
-    format!(
-        "Warning: These features in the SVG are unsupported: {}.",
-        built_svg.result_flags
-    )
-}
-
-struct Frame {
-    transform: RenderTransform,
-}
-
-impl Frame {
-    fn new(transform: RenderTransform) -> Frame {
-        Frame { transform }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum BackgroundColor {
-    Light = 0,
-    Dark = 1,
-    Transparent = 2,
-}
-
-impl BackgroundColor {
-    fn as_str(&self) -> &'static str {
-        match *self {
-            BackgroundColor::Light => "Light",
-            BackgroundColor::Dark => "Dark",
-            BackgroundColor::Transparent => "Transparent",
-        }
-    }
-}
-
 struct SceneMetadata {
     view_box: RectF,
 }
 
 impl SceneMetadata {
-    // FIXME(pcwalton): The fact that this mutates the scene is really ugly!
-    // Can we simplify this?
     fn new_clipping_view_box(scene: &mut Scene, viewport_size: Vector2I) -> SceneMetadata {
         let view_box = scene.view_box();
         scene.set_view_box(RectF::new(Vector2F::zero(), viewport_size.to_f32()));

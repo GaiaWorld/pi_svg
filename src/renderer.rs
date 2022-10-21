@@ -1,10 +1,22 @@
 use super::{window::Window, DemoApp};
-use image::ColorType;
 use pathfinder_color::ColorF;
-use pathfinder_geometry::{rect::RectI, vector::Vector2I};
-use pathfinder_gpu::{Device, RenderTarget, TextureData};
+use pathfinder_geometry::{rect::RectF, transform2d::Transform2F, vector::Vector2I};
+use pathfinder_gpu::Device;
 use pathfinder_renderer::gpu::options::{DestFramebuffer, RendererOptions};
-use std::path::PathBuf;
+
+pub struct Camera(pub Transform2F);
+
+impl Camera {
+    pub fn new(view_box: RectF, viewport_size: Vector2I) -> Camera {
+        let s = 1.0 / f32::min(view_box.size().x(), view_box.size().y());
+
+        let scale = i32::min(viewport_size.x(), viewport_size.y()) as f32 * s;
+
+        let origin = viewport_size.to_f32() * 0.5 - view_box.size() * (scale * 0.5);
+
+        Camera(Transform2F::from_scale(scale).translate(origin))
+    }
+}
 
 impl<W> DemoApp<W>
 where
@@ -31,8 +43,6 @@ where
     pub fn draw_scene(&mut self) {
         self.renderer.device().begin_commands();
 
-        self.draw_environment(0);
-
         self.renderer.device().end_commands();
 
         self.render_vector_scene();
@@ -43,43 +53,10 @@ where
     }
 
     #[allow(deprecated)]
-    pub fn composite_scene(&mut self, render_scene_index: u32) {}
-
-    // Draws the ground, if applicable.
-    fn draw_environment(&self, render_scene_index: u32) {
-        return;
-    }
-
-    #[allow(deprecated)]
     fn render_vector_scene(&mut self) {
         self.renderer.disable_depth();
 
         // Issue render commands!
         self.scene_proxy.render(&mut self.renderer);
-    }
-
-    pub fn take_raster_screenshot(&mut self, path: PathBuf) {
-        let drawable_size = self.window_size.device_size();
-        let viewport = RectI::new(Vector2I::default(), drawable_size);
-        let texture_data_receiver = self
-            .renderer
-            .device()
-            .read_pixels(&RenderTarget::Default, viewport);
-        let pixels = match self
-            .renderer
-            .device()
-            .recv_texture_data(&texture_data_receiver)
-        {
-            TextureData::U8(pixels) => pixels,
-            _ => panic!("Unexpected pixel format for default framebuffer!"),
-        };
-        image::save_buffer(
-            path,
-            &pixels,
-            drawable_size.x() as u32,
-            drawable_size.y() as u32,
-            ColorType::Rgba8,
-        )
-        .unwrap();
     }
 }

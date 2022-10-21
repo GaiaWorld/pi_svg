@@ -1,15 +1,3 @@
-// pathfinder/demo/common/src/renderer.rs
-//
-// Copyright © 2019 The Pathfinder Project Developers.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
-//! Rendering functionality for the demo.
-
 use super::window::{View, Window};
 use super::{DemoApp, UIVisibility};
 use image::ColorType;
@@ -42,12 +30,11 @@ where
 {
     pub fn prepare_frame_rendering(&mut self) -> u32 {
         // Make the context current.
-        let view = self.ui_model.mode.view(0);
+        let view = View::Mono;
         self.window.make_current(view);
 
         // Clear to the appropriate color.
-        let mode = self.camera.mode();
-        let clear_color = Some(self.ui_model.background_color().to_f32());
+       let clear_color = Some(self.ui_model.background_color().to_f32());
 
         // Set up framebuffers.
         let window_size = self.window_size.device_size();
@@ -68,7 +55,7 @@ where
     pub fn draw_scene(&mut self) {
         self.renderer.device().begin_commands();
 
-        let view = self.ui_model.mode.view(0);
+        let view = View::Mono;
         self.window.make_current(view);
 
         self.draw_environment(0);

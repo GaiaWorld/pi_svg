@@ -7,10 +7,7 @@ edition = "2021"
 [dependencies]
 log = "0.4"
 thiserror = "1.0"
-
-clap = "2.32"
 gl = "0.14"
-rayon = "1.0"
 usvg = "0.9"
 image = { version = "0.23", default-features = false, features = ["png"] }
 
@@ -27,13 +24,7 @@ pathfinder_svg = { git = "https://github.com/servo/pathfinder.git", rev = "9e033
 pathfinder_ui = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
 
 [dev-dependencies]
-winit = { version = "<0.19.4" } # 0.19.4 causes build errors https://github.com/rust-windowing/winit/pull/1105
-surfman = { git = "https://github.com/servo/surfman", rev = "f3df871ac8c3926fe9106d86a3e51e20aa50d3cc", features = [
-    "sm-winit",
-    "sm-x11",
-] }
-
-euclid = { version = "0.21.0", features = [] }
+glutin = "0.29"
 lazy_static = "1.0"
 pretty_env_logger = "0.4"
-color-backtrace = "0.3"
+color-backtrace = "0.5"

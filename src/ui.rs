@@ -1,14 +1,3 @@
-// pathfinder/demo/src/ui.rs
-//
-// Copyright © 2019 The Pathfinder Project Developers.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
-use super::camera::Mode;
 use super::window::Window;
 use super::{BackgroundColor, Options};
 use pathfinder_color::ColorU;
@@ -70,7 +59,6 @@ static BACKGROUND_PNG_NAME: &'static str = "demo-background";
 static SCREENSHOT_PNG_NAME: &'static str = "demo-screenshot";
 
 pub struct DemoUIModel {
-    pub mode: Mode,
     pub background_color: BackgroundColor,
     pub gamma_correction_effect_enabled: bool,
     pub stem_darkening_effect_enabled: bool,
@@ -82,7 +70,6 @@ pub struct DemoUIModel {
 impl DemoUIModel {
     pub fn new(options: &Options) -> DemoUIModel {
         DemoUIModel {
-            mode: options.mode,
             background_color: options.background_color,
             gamma_correction_effect_enabled: false,
             stem_darkening_effect_enabled: false,
@@ -269,13 +256,9 @@ where
             device,
             allocator,
             position,
-            &["2D", "3D", "VR"],
-            model.mode as u8,
+            &["2D"],
+            0,
         );
-        if new_mode != model.mode as u8 {
-            model.mode = Mode::TwoD;
-            *action = UIAction::ModelChanged;
-        }
 
         let mode_switch_width = debug_ui_presenter.ui_presenter.measure_segmented_control(3);
         let mode_switch_size = vec2i(mode_switch_width, BUTTON_HEIGHT);
@@ -318,11 +301,6 @@ where
 
         // Draw effects panel, if necessary.
         self.draw_effects_panel(device, allocator, debug_ui_presenter, model, action);
-
-        // Draw rotate and zoom buttons, if applicable.
-        if model.mode != Mode::TwoD {
-            return;
-        }
 
         if debug_ui_presenter.ui_presenter.draw_button(
             device,

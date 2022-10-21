@@ -1,16 +1,4 @@
-// pathfinder/demo/common/src/lib.rs
-//
-// Copyright © 2019 The Pathfinder Project Developers.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
-//! A demo app for Pathfinder.
 use camera::Camera;
-use concurrent::DemoExecutor;
 use device::{GroundProgram, GroundVertexArray};
 use pathfinder_content::effects::PatternFilter;
 use pathfinder_content::effects::DEFRINGING_KERNEL_CORE_GRAPHICS;
@@ -23,6 +11,7 @@ use pathfinder_geometry::rect::{RectF, RectI};
 use pathfinder_geometry::vector::{vec2f, vec2i, Vector2F, Vector2I};
 use pathfinder_gl::GLDevice as DeviceImpl;
 use pathfinder_gpu::Device;
+use pathfinder_renderer::concurrent::executor::SequentialExecutor;
 use pathfinder_renderer::concurrent::scene_proxy::SceneProxy;
 use pathfinder_renderer::gpu::options::{DestFramebuffer, RendererLevel};
 use pathfinder_renderer::gpu::options::{RendererMode, RendererOptions};
@@ -39,12 +28,9 @@ use ui::{DemoUIModel, ScreenshotInfo, ScreenshotType};
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
 use window::{Window, WindowSize};
 
-use self::camera::Mode;
-
 const APPROX_FONT_SIZE: f32 = 16.0;
 
 mod camera;
-mod concurrent;
 mod device;
 mod renderer;
 mod ui;
@@ -91,16 +77,13 @@ where
 
         let resources = window.resource_loader();
 
-        // Set up the executor.
-        let executor = DemoExecutor::new(options.jobs);
-
         let mut ui_model = DemoUIModel::new(&options);
 
         let level = match options.renderer_level {
             Some(level) => level,
             None => RendererLevel::default_for_device(&device),
         };
-        let viewport = window.viewport(options.mode.view(0));
+        let viewport = window.viewport(window::View::Mono);
         let dest_framebuffer = DestFramebuffer::Default {
             viewport,
             window_size: window_size.device_size(),
@@ -114,7 +97,7 @@ where
 
         let filter = build_filter(&ui_model);
 
-        let viewport = window.viewport(options.mode.view(0));
+        let viewport = window.viewport(window::View::Mono);
         let mut svg = load_scene(resources, &options.input_path);
 
         let scene = build_svg_tree(&svg, viewport.size(), filter);
@@ -124,9 +107,9 @@ where
         let renderer = Renderer::new(device, resources, render_mode, render_options);
 
         let scene_metadata = SceneMetadata::new_clipping_view_box(&mut scene, viewport.size());
-        let camera = Camera::new(options.mode, scene_metadata.view_box, viewport.size());
+        let camera = Camera::new(scene_metadata.view_box, viewport.size());
 
-        let scene_proxy = SceneProxy::from_scene(scene, level, executor);
+        let scene_proxy = SceneProxy::from_scene(scene, level, SequentialExecutor);
 
         let ground_program = GroundProgram::new(renderer.device(), resources);
         let ground_vertex_array = GroundVertexArray::new(
@@ -185,9 +168,7 @@ where
     }
 
     fn build_scene(&mut self) {
-        self.render_transform = match self.camera {
-            Camera::TwoD(transform) => Some(RenderTransform::Transform2D(transform)),
-        };
+        self.render_transform = Some(RenderTransform::Transform2D(self.camera.0));
 
         let build_options = BuildOptions {
             transform: self.render_transform.clone().unwrap(),
@@ -246,8 +227,6 @@ where
 
 #[derive(Clone)]
 pub struct Options {
-    pub jobs: Option<usize>,
-    pub mode: Mode,
     pub input_path: PathBuf,
     pub ui: UIVisibility,
     pub background_color: BackgroundColor,
@@ -258,9 +237,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Options {
-            jobs: None,
-            mode: Mode::TwoD,
-            input_path: PathBuf::from(""),
+           input_path: PathBuf::from(""),
             ui: UIVisibility::None,
             background_color: BackgroundColor::Light,
             high_performance_gpu: true,

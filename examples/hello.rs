@@ -1,57 +1,38 @@
-use euclid::default::Size2D;
+use glutin::dpi::PhysicalSize;
+use glutin::event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use glutin::event_loop::{ControlFlow, EventLoop};
+use glutin::window::WindowBuilder;
+use glutin::{ContextBuilder, GlProfile, GlRequest, PossiblyCurrent, WindowedContext};
 use gl::{self, types::GLuint};
 use pathfinder_geometry::{rect::RectI, vector::vec2i};
+use pathfinder_gl::{GLDevice, GLVersion};
 use pathfinder_resources::{fs::FilesystemResourceLoader, ResourceLoader};
 use pi_svg::{
     window::{View, Window, WindowSize},
     DemoApp, Options,
 };
 use std::path::PathBuf;
-use surfman::{
-    declare_surfman, Connection, Context, ContextAttributeFlags, ContextAttributes, Device,
-    GLVersion as SurfmanGLVersion, SurfaceAccess, SurfaceType,
-};
-use winit::{dpi::LogicalSize, EventsLoop, Window as WinitWindow, WindowBuilder};
-use pathfinder_gl::{GLDevice, GLVersion};
 
-const DEFAULT_WINDOW_WIDTH: u32 = 1024;
-const DEFAULT_WINDOW_HEIGHT: u32 = 768;
-
-declare_surfman!();
+const WINDOW_WIDTH: u32 = 1024;
+const WINDOW_HEIGHT: u32 = 768;
 
 fn main() {
     color_backtrace::install();
     pretty_env_logger::init();
 
-    // Read command line options.
+    let (window, event_loop) = WindowImpl::new();
+    let window_size = window.size();
+
     let mut options = Options::default();
     options.input_path = PathBuf::from("./examples/Ghostscript_Tiger.svg");
 
-    let window = WindowImpl::new(&options);
-    let window_size = window.size();
+    let app = DemoApp::new(window, window_size, options);
 
-    let mut app = DemoApp::new(window, window_size, options);
-
-    while !app.should_exit {
-        let scene_count = app.prepare_frame();
-
-        app.draw_scene();
-        app.begin_compositing();
-        for scene_index in 0..scene_count {
-            app.composite_scene(scene_index);
-        }
-        app.finish_drawing_frame();
-    }
+    run_loop(app, event_loop);
 }
 
 struct WindowImpl {
-    window: WinitWindow,
-    event_loop: EventsLoop,
-
-    device: Device,
-    context: Context,
-    connection: Connection,
-
+    render_context: WindowedContext<PossiblyCurrent>,
     resource_loader: FilesystemResourceLoader,
 }
 
@@ -60,20 +41,13 @@ impl Window for WindowImpl {
         GLVersion::GL4
     }
 
-    fn gl_default_framebuffer(&self) -> GLuint {
-        self.device
-            .context_surface_info(&self.context)
-            .unwrap()
-            .unwrap()
-            .framebuffer_object
-    }
-
     fn viewport(&self, view: View) -> RectI {
         let WindowSize {
             logical_size,
             backing_scale_factor,
         } = self.size();
         let mut size = (logical_size.to_f32() * backing_scale_factor).to_i32();
+
         let mut x_offset = 0;
         if let View::Stereo(index) = view {
             size.set_x(size.x() / 2);
@@ -82,100 +56,104 @@ impl Window for WindowImpl {
         RectI::new(vec2i(x_offset, 0), size)
     }
 
-    fn make_current(&mut self, _view: View) {
-        self.device.make_context_current(&self.context).unwrap();
-    }
-
     fn present(&mut self, _: &mut GLDevice) {
-        let mut surface = self
-            .device
-            .unbind_surface_from_context(&mut self.context)
-            .unwrap()
-            .unwrap();
-        self.device
-            .present_surface(&mut self.context, &mut surface)
-            .unwrap();
-        self.device
-            .bind_surface_to_context(&mut self.context, surface)
-            .unwrap();
+        self.render_context.swap_buffers().unwrap();
     }
 
     fn resource_loader(&self) -> &dyn ResourceLoader {
         &self.resource_loader
     }
+
+    fn make_current(&mut self, view: View) {
+    }
+
+    fn gl_default_framebuffer(&self) -> GLuint {
+        0
+    }
 }
 
 impl WindowImpl {
-    fn new(options: &Options) -> WindowImpl {
-        let event_loop = EventsLoop::new();
-        let window_size = Size2D::new(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT);
-        let logical_size = LogicalSize::new(window_size.width as f64, window_size.height as f64);
-        let window = WindowBuilder::new()
-            .with_title("Pathfinder Demo")
-            .with_dimensions(logical_size)
-            .build(&event_loop)
-            .unwrap();
-        window.show();
+    fn new() -> (WindowImpl, EventLoop<()>) {
+        let event_loop = EventLoop::new();
 
-        let connection = Connection::from_winit_window(&window).unwrap();
-        let native_widget = connection
-            .create_native_widget_from_winit_window(&window)
-            .unwrap();
+        let physical_window_size = PhysicalSize::new(WINDOW_WIDTH as f64, WINDOW_HEIGHT as f64);
 
-        let adapter = if options.high_performance_gpu {
-            connection.create_hardware_adapter().unwrap()
-        } else {
-            connection.create_low_power_adapter().unwrap()
-        };
+        // Open a window.
+        let window_builder = WindowBuilder::new()
+            .with_title("Minimal example")
+            .with_inner_size(physical_window_size);
 
-        let mut device = connection.create_device(&adapter).unwrap();
-
-        let context_attributes = ContextAttributes {
-            version: SurfmanGLVersion::new(3, 0),
-            flags: ContextAttributeFlags::ALPHA,
-        };
-        let context_descriptor = device
-            .create_context_descriptor(&context_attributes)
+        // Create an OpenGL 3.x context for Pathfinder to use.
+        let render_context = ContextBuilder::new()
+            .with_gl(GlRequest::Latest)
+            .with_gl_profile(GlProfile::Core)
+            .build_windowed(window_builder, &event_loop)
             .unwrap();
 
-        let surface_type = SurfaceType::Widget { native_widget };
-        let mut context = device.create_context(&context_descriptor).unwrap();
-        let surface = device
-            .create_surface(&context, SurfaceAccess::GPUOnly, surface_type)
-            .unwrap();
-        device
-            .bind_surface_to_context(&mut context, surface)
-            .unwrap();
-        device.make_context_current(&context).unwrap();
-
-        gl::load_with(|symbol_name| device.get_proc_address(&context, symbol_name));
+        // Load OpenGL, and make the context current.
+        let render_context = unsafe { render_context.make_current().unwrap() };
+        gl::load_with(|name| render_context.get_proc_address(name) as *const _);
 
         let resource_loader = FilesystemResourceLoader::locate();
 
-        WindowImpl {
-            window,
+        (
+            WindowImpl {
+                resource_loader,
+                render_context,
+            },
             event_loop,
-            connection,
-            context,
-            device,
-            resource_loader,
-        }
-    }
-
-    fn window(&self) -> &WinitWindow {
-        &self.window
+        )
     }
 
     fn size(&self) -> WindowSize {
-        let window = self.window();
-        let (monitor, size) = (
-            window.get_current_monitor(),
-            window.get_inner_size().unwrap(),
-        );
+        let window = self.render_context.window();
+
+        let (monitor, size) = (window.current_monitor().unwrap(), window.inner_size());
 
         WindowSize {
             logical_size: vec2i(size.width as i32, size.height as i32),
-            backing_scale_factor: monitor.get_hidpi_factor() as f32,
+            backing_scale_factor: monitor.scale_factor() as f32,
         }
     }
+}
+
+fn run_loop(mut app: DemoApp<WindowImpl>, event_loop: EventLoop<()>) {
+    event_loop.run(move |event, _, control_flow| {
+        match event {
+            Event::MainEventsCleared => {
+                app.window.render_context.window().request_redraw();
+            }
+            Event::RedrawRequested(_) => {
+                let scene_count = app.prepare_frame();
+
+                app.draw_scene();
+                app.begin_compositing();
+                for scene_index in 0..scene_count {
+                    app.composite_scene(scene_index);
+                }
+                app.finish_drawing_frame();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            }
+            | Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                ..
+                            },
+                        ..
+                    },
+                ..
+            } => {
+                *control_flow = ControlFlow::Exit;
+            }
+            _ => {
+                *control_flow = ControlFlow::Poll;
+            }
+        };
+    });
 }

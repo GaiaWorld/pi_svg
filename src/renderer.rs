@@ -1,28 +1,13 @@
-use super::window::{View, Window};
-use super::{DemoApp, UIVisibility};
+use super::{
+    window::{View, Window},
+    DemoApp,
+};
 use image::ColorType;
-use pathfinder_color::ColorU;
-use pathfinder_geometry::rect::RectI;
-use pathfinder_geometry::vector::Vector2I;
-use pathfinder_gpu::{TextureData, Device, RenderTarget};
+use pathfinder_color::ColorF;
+use pathfinder_geometry::{rect::RectI, vector::Vector2I};
+use pathfinder_gpu::{Device, RenderTarget, TextureData};
 use pathfinder_renderer::gpu::options::{DestFramebuffer, RendererOptions};
 use std::path::PathBuf;
-
-const GROUND_SOLID_COLOR: ColorU = ColorU {
-    r: 80,
-    g: 80,
-    b: 80,
-    a: 255,
-};
-
-const GROUND_LINE_COLOR: ColorU = ColorU {
-    r: 127,
-    g: 127,
-    b: 127,
-    a: 255,
-};
-
-const GRIDLINE_COUNT: i32 = 10;
 
 impl<W> DemoApp<W>
 where
@@ -33,10 +18,8 @@ where
         let view = View::Mono;
         self.window.make_current(view);
 
-        // Clear to the appropriate color.
-       let clear_color = Some(self.ui_model.background_color().to_f32());
+        let clear_color = Some(ColorF::new(1.0, 1.0, 0.0, 1.0));
 
-        // Set up framebuffers.
         let window_size = self.window_size.device_size();
         let scene_count = {
             *self.renderer.options_mut() = RendererOptions {
@@ -45,7 +28,7 @@ where
                     window_size,
                 },
                 background_color: clear_color,
-                show_debug_ui: self.options.ui != UIVisibility::None,
+                show_debug_ui: false,
             };
             1
         };

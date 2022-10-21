@@ -1,39 +1,30 @@
 use camera::Camera;
 use device::{GroundProgram, GroundVertexArray};
 use pathfinder_content::effects::PatternFilter;
-use pathfinder_content::effects::DEFRINGING_KERNEL_CORE_GRAPHICS;
-use pathfinder_content::effects::STEM_DARKENING_FACTORS;
 use pathfinder_content::outline::Outline;
 use pathfinder_content::pattern::Pattern;
 use pathfinder_content::render_target::RenderTargetId;
-use pathfinder_export::{Export, FileFormat};
 use pathfinder_geometry::rect::{RectF, RectI};
-use pathfinder_geometry::vector::{vec2f, vec2i, Vector2F, Vector2I};
+use pathfinder_geometry::vector::{vec2i, Vector2F, Vector2I};
 use pathfinder_gl::GLDevice as DeviceImpl;
 use pathfinder_gpu::Device;
 use pathfinder_renderer::concurrent::executor::SequentialExecutor;
 use pathfinder_renderer::concurrent::scene_proxy::SceneProxy;
 use pathfinder_renderer::gpu::options::{DestFramebuffer, RendererLevel};
 use pathfinder_renderer::gpu::options::{RendererMode, RendererOptions};
-use pathfinder_renderer::gpu::renderer::{DebugUIPresenterInfo, Renderer};
+use pathfinder_renderer::gpu::renderer::Renderer;
 use pathfinder_renderer::options::{BuildOptions, RenderTransform};
 use pathfinder_renderer::paint::Paint;
 use pathfinder_renderer::scene::{DrawPath, RenderTarget, Scene};
 use pathfinder_resources::ResourceLoader;
 use pathfinder_svg::SVGScene;
-use std::fs::File;
-use std::io::BufWriter;
 use std::path::PathBuf;
-use ui::{DemoUIModel, ScreenshotInfo, ScreenshotType};
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
 use window::{Window, WindowSize};
-
-const APPROX_FONT_SIZE: f32 = 16.0;
 
 mod camera;
 mod device;
 mod renderer;
-mod ui;
 
 pub mod window;
 
@@ -42,23 +33,15 @@ where
     W: Window,
 {
     pub window: W,
-    pub should_exit: bool,
-    pub options: Options,
-
     window_size: WindowSize,
 
     render_transform: Option<RenderTransform>,
 
     camera: Camera,
     frame_counter: u32,
-    pending_screenshot_info: Option<ScreenshotInfo>,
-
-    pub dirty: bool,
 
     current_frame: Option<Frame>,
 
-    ui_model: DemoUIModel,
-    
     scene_proxy: SceneProxy,
     renderer: Renderer<DeviceImpl>,
 
@@ -77,8 +60,6 @@ where
 
         let resources = window.resource_loader();
 
-        let mut ui_model = DemoUIModel::new(&options);
-
         let level = match options.renderer_level {
             Some(level) => level,
             None => RendererLevel::default_for_device(&device),
@@ -95,7 +76,7 @@ where
             show_debug_ui: true,
         };
 
-        let filter = build_filter(&ui_model);
+        let filter = None;
 
         let viewport = window.viewport(window::View::Mono);
         let mut svg = load_scene(resources, &options.input_path);
@@ -119,26 +100,16 @@ where
             &renderer.quad_vertex_indices_buffer(),
         );
 
-        // let ui_presenter = DemoUIPresenter::new(renderer.device(), resources);
-
         DemoApp {
             window,
-            should_exit: false,
-            options,
-
             window_size,
 
             render_transform: None,
 
             camera,
             frame_counter: 0,
-            pending_screenshot_info: None,
-
-            dirty: true,
 
             current_frame: None,
-
-            ui_model,
 
             scene_proxy,
             renderer,
@@ -151,19 +122,12 @@ where
     }
 
     pub fn prepare_frame(&mut self) -> u32 {
-        // Clear dirty flag.
-        self.dirty = false;
-
-        // Update the scene.
         self.build_scene();
 
-        // Save the frame.
-        //
-        // FIXME(pcwalton): This is super ugly.
         let transform = self.render_transform.clone().unwrap();
+
         self.current_frame = Some(Frame::new(transform));
 
-        // Prepare to render the frame.
         self.prepare_frame_rendering()
     }
 
@@ -172,56 +136,20 @@ where
 
         let build_options = BuildOptions {
             transform: self.render_transform.clone().unwrap(),
-            dilation: if self.ui_model.stem_darkening_effect_enabled {
-                let font_size = APPROX_FONT_SIZE * self.window_size.backing_scale_factor;
-                vec2f(STEM_DARKENING_FACTORS[0], STEM_DARKENING_FACTORS[1]) * font_size
-            } else {
-                Vector2F::zero()
-            },
-            subpixel_aa_enabled: self.ui_model.subpixel_aa_effect_enabled,
+            dilation: Vector2F::zero(),
+            subpixel_aa_enabled: false,
         };
 
         self.scene_proxy.build(build_options);
     }
 
     pub fn finish_drawing_frame(&mut self) {
-        self.maybe_take_screenshot();
-
         let frame = self.current_frame.take().unwrap();
-
-        if self.options.ui == UIVisibility::All {
-            let DebugUIPresenterInfo {
-                device,
-                allocator,
-                debug_ui_presenter,
-            } = self.renderer.debug_ui_presenter_mut();
-        }
 
         self.renderer.device().end_commands();
 
         self.window.present(self.renderer.device_mut());
         self.frame_counter += 1;
-    }
-
-    fn maybe_take_screenshot(&mut self) {
-        match self.pending_screenshot_info.take() {
-            None => {}
-            Some(ScreenshotInfo {
-                kind: ScreenshotType::PNG,
-                path,
-            }) => self.take_raster_screenshot(path),
-            Some(ScreenshotInfo {
-                kind: ScreenshotType::SVG,
-                path,
-            }) => {
-                // FIXME(pcwalton): This won't work on Android.
-                let mut writer = BufWriter::new(File::create(path).unwrap());
-                self.scene_proxy
-                    .copy_scene()
-                    .export(&mut writer, FileFormat::SVG)
-                    .unwrap();
-            }
-        }
     }
 }
 
@@ -237,7 +165,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Options {
-           input_path: PathBuf::from(""),
+            input_path: PathBuf::from(""),
             ui: UIVisibility::None,
             background_color: BackgroundColor::Light,
             high_performance_gpu: true,
@@ -370,22 +298,4 @@ impl SceneMetadata {
         scene.set_view_box(RectF::new(Vector2F::zero(), viewport_size.to_f32()));
         SceneMetadata { view_box }
     }
-}
-
-fn build_filter(ui_model: &DemoUIModel) -> Option<PatternFilter> {
-    if !ui_model.gamma_correction_effect_enabled && !ui_model.subpixel_aa_effect_enabled {
-        return None;
-    }
-
-    Some(PatternFilter::Text {
-        fg_color: ui_model.foreground_color().to_f32(),
-        bg_color: ui_model.background_color().to_f32(),
-        gamma_correction: ui_model.gamma_correction_effect_enabled,
-        defringing_kernel: if ui_model.subpixel_aa_effect_enabled {
-            // TODO(pcwalton): Select FreeType defringing kernel as necessary.
-            Some(DEFRINGING_KERNEL_CORE_GRAPHICS)
-        } else {
-            None
-        },
-    })
 }

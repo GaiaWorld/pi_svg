@@ -1,6 +1,6 @@
 use gl::types::GLuint;
 use pathfinder_geometry::{rect::RectI, vector::Vector2I};
-use pathfinder_gl::{GLDevice, GLVersion};
+use pathfinder_gl::{GLVersion};
 use pathfinder_resources::ResourceLoader;
 
 pub trait Window {
@@ -8,9 +8,9 @@ pub trait Window {
     fn gl_default_framebuffer(&self) -> GLuint {
         0
     }
-    fn present(&mut self, device: &mut GLDevice);
-
+    
     fn viewport(&self) -> RectI;
+    
     fn resource_loader(&self) -> &dyn ResourceLoader;
 }
 

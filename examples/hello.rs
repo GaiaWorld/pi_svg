@@ -5,7 +5,7 @@ use glutin::event_loop::{ControlFlow, EventLoop};
 use glutin::window::WindowBuilder;
 use glutin::{ContextBuilder, GlProfile, GlRequest, PossiblyCurrent, WindowedContext};
 use pathfinder_geometry::{rect::RectI, vector::vec2i};
-use pathfinder_gl::{GLDevice, GLVersion};
+use pathfinder_gl::GLVersion;
 use pathfinder_resources::{fs::FilesystemResourceLoader, ResourceLoader};
 use pi_svg::{
     window::{Window, WindowSize},
@@ -48,10 +48,6 @@ impl Window for WindowImpl {
         } = self.size();
         let size = (logical_size.to_f32() * backing_scale_factor).to_i32();
         RectI::new(vec2i(0, 0), size)
-    }
-
-    fn present(&mut self, _: &mut GLDevice) {
-        self.render_context.swap_buffers().unwrap();
     }
 
     fn resource_loader(&self) -> &dyn ResourceLoader {
@@ -119,6 +115,8 @@ fn run_loop(mut app: DemoApp<WindowImpl>, event_loop: EventLoop<()>) {
                 app.begin_compositing();
 
                 app.finish_drawing_frame();
+
+                app.window.render_context.swap_buffers().unwrap();
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,

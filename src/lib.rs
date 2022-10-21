@@ -10,7 +10,6 @@
 
 //! A demo app for Pathfinder.
 use camera::Camera;
-use clap::{App, Arg};
 use concurrent::DemoExecutor;
 use device::{GroundProgram, GroundVertexArray};
 use pathfinder_content::effects::PatternFilter;
@@ -21,8 +20,8 @@ use pathfinder_content::pattern::Pattern;
 use pathfinder_content::render_target::RenderTargetId;
 use pathfinder_export::{Export, FileFormat};
 use pathfinder_geometry::rect::{RectF, RectI};
-use pathfinder_geometry::transform3d::Transform4F;
-use pathfinder_geometry::vector::{vec2f, vec2i, Vector2F, Vector2I, Vector4F};
+use pathfinder_geometry::vector::{vec2f, vec2i, Vector2F, Vector2I};
+use pathfinder_gl::GLDevice as DeviceImpl;
 use pathfinder_gpu::Device;
 use pathfinder_renderer::concurrent::scene_proxy::SceneProxy;
 use pathfinder_renderer::gpu::options::{DestFramebuffer, RendererLevel};
@@ -33,45 +32,24 @@ use pathfinder_renderer::paint::Paint;
 use pathfinder_renderer::scene::{DrawPath, RenderTarget, Scene};
 use pathfinder_resources::ResourceLoader;
 use pathfinder_svg::SVGScene;
-use pathfinder_ui::{MousePosition, UIEvent};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::thread;
-use std::time::Duration;
 use ui::{DemoUIModel, ScreenshotInfo, ScreenshotType};
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
-use window::{Event, Keycode, Window, WindowSize};
-
-#[cfg(any(not(target_os = "macos"), feature = "pf-gl"))]
-use pathfinder_gl::GLDevice as DeviceImpl;
-#[cfg(all(target_os = "macos", not(feature = "pf-gl")))]
-use pathfinder_metal::MetalDevice as DeviceImpl;
+use window::{Window, WindowSize};
 
 use self::camera::Mode;
 
-const MOUSELOOK_ROTATION_SPEED: f32 = 0.007;
-const CAMERA_VELOCITY: f32 = 0.02;
-
-// How much the scene is scaled when a scale gesture is performed.
-const CAMERA_SCALE_SPEED_2D: f32 = 6.0;
-// How much the scene is scaled when a zoom button is clicked.
-const CAMERA_ZOOM_AMOUNT_2D: f32 = 0.1;
-
-// Half of the eye separation distance.
-const DEFAULT_EYE_OFFSET: f32 = 0.025;
-
 const APPROX_FONT_SIZE: f32 = 16.0;
-
-const MESSAGE_TIMEOUT_SECS: u64 = 5;
-
-pub mod window;
 
 mod camera;
 mod concurrent;
 mod device;
 mod renderer;
 mod ui;
+
+pub mod window;
 
 pub struct DemoApp<W>
 where
@@ -83,8 +61,6 @@ where
 
     window_size: WindowSize,
 
-    svg: SvgTree,
-    scene_metadata: SceneMetadata,
     render_transform: Option<RenderTransform>,
 
     camera: Camera,
@@ -96,7 +72,7 @@ where
     current_frame: Option<Frame>,
 
     ui_model: DemoUIModel,
-    // ui_presenter: DemoUIPresenter<DeviceImpl>,
+    
     scene_proxy: SceneProxy,
     renderer: Renderer<DeviceImpl>,
 
@@ -169,8 +145,6 @@ where
 
             window_size,
 
-            svg,
-            scene_metadata,
             render_transform: None,
 
             camera,
@@ -233,7 +207,7 @@ where
         self.maybe_take_screenshot();
 
         let frame = self.current_frame.take().unwrap();
-        
+
         if self.options.ui == UIVisibility::All {
             let DebugUIPresenterInfo {
                 device,
@@ -279,7 +253,6 @@ pub struct Options {
     pub background_color: BackgroundColor,
     pub high_performance_gpu: bool,
     pub renderer_level: Option<RendererLevel>,
-    hidden_field_for_future_proofing: (),
 }
 
 impl Default for Options {
@@ -288,112 +261,11 @@ impl Default for Options {
             jobs: None,
             mode: Mode::TwoD,
             input_path: PathBuf::from(""),
-            ui: UIVisibility::All,
+            ui: UIVisibility::None,
             background_color: BackgroundColor::Light,
-            high_performance_gpu: false,
+            high_performance_gpu: true,
             renderer_level: None,
-            hidden_field_for_future_proofing: (),
         }
-    }
-}
-
-impl Options {
-    pub fn command_line_overrides(&mut self) {
-        let matches = App::new("demo")
-            .arg(
-                Arg::with_name("jobs")
-                    .short("j")
-                    .long("jobs")
-                    .value_name("THREADS")
-                    .takes_value(true)
-                    .help("Number of threads to use"),
-            )
-            .arg(
-                Arg::with_name("3d")
-                    .short("3")
-                    .long("3d")
-                    .help("Run in 3D")
-                    .conflicts_with("vr"),
-            )
-            .arg(
-                Arg::with_name("vr")
-                    .short("V")
-                    .long("vr")
-                    .help("Run in VR")
-                    .conflicts_with("3d"),
-            )
-            .arg(
-                Arg::with_name("ui")
-                    .short("u")
-                    .long("ui")
-                    .takes_value(true)
-                    .possible_values(&["none", "stats", "all"])
-                    .help("How much UI to show"),
-            )
-            .arg(
-                Arg::with_name("background")
-                    .short("b")
-                    .long("background")
-                    .takes_value(true)
-                    .possible_values(&["light", "dark", "transparent"])
-                    .help("The background color to use"),
-            )
-            .arg(
-                Arg::with_name("high-performance-gpu")
-                    .short("g")
-                    .long("high-performance-gpu")
-                    .help("Use the high-performance (discrete) GPU, if available"),
-            )
-            .arg(
-                Arg::with_name("level")
-                    .long("level")
-                    .short("l")
-                    .help("Set the renderer feature level as a Direct3D version equivalent")
-                    .takes_value(true)
-                    .possible_values(&["9", "11"]),
-            )
-            .arg(
-                Arg::with_name("INPUT")
-                    .help("Path to the SVG file to render")
-                    .index(1),
-            )
-            .get_matches();
-
-        if let Some(jobs) = matches.value_of("jobs") {
-            self.jobs = jobs.parse().ok();
-        }
-
-        if let Some(ui) = matches.value_of("ui") {
-            self.ui = match ui {
-                "none" => UIVisibility::None,
-                "stats" => UIVisibility::Stats,
-                _ => UIVisibility::All,
-            };
-        }
-
-        if let Some(background_color) = matches.value_of("background") {
-            self.background_color = match background_color {
-                "light" => BackgroundColor::Light,
-                "dark" => BackgroundColor::Dark,
-                _ => BackgroundColor::Transparent,
-            };
-        }
-
-        if matches.is_present("high-performance-gpu") {
-            self.high_performance_gpu = true;
-        }
-
-        if let Some(renderer_level) = matches.value_of("level") {
-            if renderer_level == "11" {
-                self.renderer_level = Some(RendererLevel::D3D11);
-            } else if renderer_level == "9" {
-                self.renderer_level = Some(RendererLevel::D3D9);
-            }
-        }
-
-        if let Some(path) = matches.value_of("INPUT") {
-            self.input_path = PathBuf::from(path);
-        };
     }
 }
 
@@ -488,9 +360,7 @@ struct Frame {
 
 impl Frame {
     fn new(transform: RenderTransform) -> Frame {
-        Frame {
-            transform,
-        }
+        Frame { transform }
     }
 }
 

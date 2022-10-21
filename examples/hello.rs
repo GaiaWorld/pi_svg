@@ -25,7 +25,6 @@ fn main() {
 
     // Read command line options.
     let mut options = Options::default();
-    options.command_line_overrides();
     options.input_path = PathBuf::from("./examples/Ghostscript_Tiger.svg");
 
     let window = WindowImpl::new(&options);

@@ -1,21 +1,24 @@
 use camera::Camera;
 use device::{GroundProgram, GroundVertexArray};
-use pathfinder_content::effects::PatternFilter;
-use pathfinder_content::outline::Outline;
-use pathfinder_content::pattern::Pattern;
-use pathfinder_content::render_target::RenderTargetId;
-use pathfinder_geometry::rect::{RectF, RectI};
-use pathfinder_geometry::vector::{vec2i, Vector2F, Vector2I};
+use pathfinder_content::{
+    effects::PatternFilter, outline::Outline, pattern::Pattern, render_target::RenderTargetId,
+};
+use pathfinder_geometry::{
+    rect::{RectF, RectI},
+    vector::{vec2i, Vector2F, Vector2I},
+};
 use pathfinder_gl::GLDevice as DeviceImpl;
 use pathfinder_gpu::Device;
-use pathfinder_renderer::concurrent::executor::SequentialExecutor;
-use pathfinder_renderer::concurrent::scene_proxy::SceneProxy;
-use pathfinder_renderer::gpu::options::{DestFramebuffer, RendererLevel};
-use pathfinder_renderer::gpu::options::{RendererMode, RendererOptions};
-use pathfinder_renderer::gpu::renderer::Renderer;
-use pathfinder_renderer::options::{BuildOptions, RenderTransform};
-use pathfinder_renderer::paint::Paint;
-use pathfinder_renderer::scene::{DrawPath, RenderTarget, Scene};
+use pathfinder_renderer::{
+    concurrent::{executor::SequentialExecutor, scene_proxy::SceneProxy},
+    gpu::{
+        options::{DestFramebuffer, RendererLevel, RendererMode, RendererOptions},
+        renderer::Renderer,
+    },
+    options::{BuildOptions, RenderTransform},
+    paint::Paint,
+    scene::{DrawPath, RenderTarget, Scene},
+};
 use pathfinder_resources::ResourceLoader;
 use pathfinder_svg::SVGScene;
 use std::path::PathBuf;
@@ -44,11 +47,6 @@ where
 
     scene_proxy: SceneProxy,
     renderer: Renderer<DeviceImpl>,
-
-    scene_framebuffer: Option<<DeviceImpl as Device>::Framebuffer>,
-
-    ground_program: GroundProgram<DeviceImpl>,
-    ground_vertex_array: GroundVertexArray<DeviceImpl>,
 }
 
 impl<W> DemoApp<W>
@@ -64,7 +62,7 @@ where
             Some(level) => level,
             None => RendererLevel::default_for_device(&device),
         };
-        let viewport = window.viewport(window::View::Mono);
+        let viewport = window.viewport();
         let dest_framebuffer = DestFramebuffer::Default {
             viewport,
             window_size: window_size.device_size(),
@@ -78,7 +76,7 @@ where
 
         let filter = None;
 
-        let viewport = window.viewport(window::View::Mono);
+        let viewport = window.viewport();
         let mut svg = load_scene(resources, &options.input_path);
 
         let scene = build_svg_tree(&svg, viewport.size(), filter);
@@ -113,11 +111,6 @@ where
 
             scene_proxy,
             renderer,
-
-            scene_framebuffer: None,
-
-            ground_program,
-            ground_vertex_array,
         }
     }
 
@@ -182,7 +175,7 @@ pub enum UIVisibility {
 }
 
 fn load_scene(resource_loader: &dyn ResourceLoader, input_path: &PathBuf) -> SvgTree {
-    let data: Vec<u8> = std::fs::read(input_path).unwrap().into();
+    let data: Vec<u8> = std::fs::read(input_path).unwrap();
 
     if let Ok(tree) = SvgTree::from_data(&data, &UsvgOptions::default()) {
         tree

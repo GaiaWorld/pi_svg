@@ -1,14 +1,14 @@
+use gl::{self, types::GLuint};
 use glutin::dpi::PhysicalSize;
 use glutin::event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use glutin::event_loop::{ControlFlow, EventLoop};
 use glutin::window::WindowBuilder;
 use glutin::{ContextBuilder, GlProfile, GlRequest, PossiblyCurrent, WindowedContext};
-use gl::{self, types::GLuint};
 use pathfinder_geometry::{rect::RectI, vector::vec2i};
 use pathfinder_gl::{GLDevice, GLVersion};
 use pathfinder_resources::{fs::FilesystemResourceLoader, ResourceLoader};
 use pi_svg::{
-    window::{View, Window, WindowSize},
+    window::{Window, WindowSize},
     DemoApp, Options,
 };
 use std::path::PathBuf;
@@ -41,7 +41,7 @@ impl Window for WindowImpl {
         GLVersion::GL4
     }
 
-    fn viewport(&self, view: View) -> RectI {
+    fn viewport(&self) -> RectI {
         let WindowSize {
             logical_size,
             backing_scale_factor,
@@ -49,10 +49,7 @@ impl Window for WindowImpl {
         let mut size = (logical_size.to_f32() * backing_scale_factor).to_i32();
 
         let mut x_offset = 0;
-        if let View::Stereo(index) = view {
-            size.set_x(size.x() / 2);
-            x_offset = size.x() * (index as i32);
-        }
+
         RectI::new(vec2i(x_offset, 0), size)
     }
 
@@ -62,9 +59,6 @@ impl Window for WindowImpl {
 
     fn resource_loader(&self) -> &dyn ResourceLoader {
         &self.resource_loader
-    }
-
-    fn make_current(&mut self, view: View) {
     }
 
     fn gl_default_framebuffer(&self) -> GLuint {

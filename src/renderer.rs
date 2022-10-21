@@ -1,7 +1,4 @@
-use super::{
-    window::{View, Window},
-    DemoApp,
-};
+use super::{window::Window, DemoApp};
 use image::ColorType;
 use pathfinder_color::ColorF;
 use pathfinder_geometry::{rect::RectI, vector::Vector2I};
@@ -14,17 +11,13 @@ where
     W: Window,
 {
     pub fn prepare_frame_rendering(&mut self) -> u32 {
-        // Make the context current.
-        let view = View::Mono;
-        self.window.make_current(view);
-
         let clear_color = Some(ColorF::new(1.0, 1.0, 0.0, 1.0));
 
         let window_size = self.window_size.device_size();
         let scene_count = {
             *self.renderer.options_mut() = RendererOptions {
                 dest: DestFramebuffer::Default {
-                    viewport: self.window.viewport(View::Mono),
+                    viewport: self.window.viewport(),
                     window_size,
                 },
                 background_color: clear_color,
@@ -37,9 +30,6 @@ where
 
     pub fn draw_scene(&mut self) {
         self.renderer.device().begin_commands();
-
-        let view = View::Mono;
-        self.window.make_current(view);
 
         self.draw_environment(0);
 

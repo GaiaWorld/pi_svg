@@ -1,7 +1,3 @@
-// mod svg_renderer;
+mod draw_svg;
 
-mod framework;
-
-pub mod window;
-pub use framework::*;
-
+pub use draw_svg::*;

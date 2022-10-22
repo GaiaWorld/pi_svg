@@ -13,7 +13,10 @@ fn main() {
 
     let (window, event_loop) = WindowImpl::new();
 
-    let mut app = SvgRenderer::default();
+    let (w, h) = window.get_device_size();
+    let mut app = SvgRenderer::new(0, w, h, (100, 300),  None);
+
+    app.set_clear_color(1.0, 1.0, 0.0, 0.0);
 
     let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
     app.load_svg(data.as_slice()).unwrap();

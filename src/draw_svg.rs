@@ -53,12 +53,18 @@ pub struct SvgRenderer {
     // 视口：offset 来自 set_target
     viewport_offset: Vector2I,
     // 视口 大小：来自 svg 的 width, height
-    viewport_size: Vector2I,
+    viewport_size: Option<Vector2I>,
 }
 
-impl Default for SvgRenderer {
-    fn default() -> Self {
-        Self {
+impl SvgRenderer {
+    pub fn new(
+        fbo_id: u32,
+        target_w: i32,
+        target_h: i32,
+        vp_offset: (i32, i32),
+        vp_size: Option<(i32, i32)>,
+    ) -> Self {
+        let mut s = Self {
             gl_version: get_native_gl_version(),
             gl_level: RendererLevel::D3D9,
 
@@ -68,47 +74,20 @@ impl Default for SvgRenderer {
             clear_color: ColorF::new(1.0, 0.0, 0.0, 1.0),
 
             viewport_offset: vec2i(0, 0),
-            viewport_size: vec2i(1, 1),
+            viewport_size: None,
 
             target_size: vec2i(1, 1),
-        }
-    }
-}
+        };
 
-impl SvgRenderer {
+        s.set_target(fbo_id, target_w, target_h);
+        s.set_viewport(vp_offset.0, vp_offset.1, vp_size);
+
+        s
+    }
+
     /// 设置背景色
     pub fn set_clear_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
         self.clear_color = ColorF::new(r, g, b, a);
-    }
-
-    /// 设置 渲染目标
-    /// 注：viewport的 w, h 需要从 svg 取得
-    pub fn set_target(
-        &mut self,
-        fbo_id: u32,
-        viewport_x: i32,
-        viewport_y: i32,
-        target_w: i32,
-        target_h: i32,
-    ) {
-        self.viewport_offset = vec2i(viewport_x, viewport_y);
-        self.target_size = vec2i(target_w, target_h);
-
-        self.renderer = Some(Renderer::new(
-            DeviceImpl::new(self.gl_version, fbo_id),
-            &FilesystemResourceLoader::locate(),
-            RendererMode {
-                level: self.gl_level,
-            },
-            RendererOptions {
-                background_color: Some(self.clear_color),
-                show_debug_ui: false,
-                dest: DestFramebuffer::Default {
-                    viewport: RectI::new(self.viewport_offset, self.viewport_size),
-                    window_size: self.target_size,
-                },
-            },
-        ));
     }
 
     /// 加载 svg 二进制数据，格式 见 examples/ 的 svg 文件
@@ -133,10 +112,11 @@ impl SvgRenderer {
         let view_box = svg_node.view_box;
         log::info!("svg size = {:?}, view_box = {:?}", size, view_box);
 
-        let viewport = RectI::new(
-            Vector2I::new(0, 0),
-            Vector2I::new(size.width() as i32, size.height() as i32),
-        );
+        if self.viewport_size.is_none() {
+            self.viewport_size = Some(vec2i(size.width() as i32, size.height() as i32));
+        }
+
+        let viewport = RectI::new(self.viewport_offset, self.viewport_size.unwrap());
 
         let mut scene = scene.scene;
 
@@ -157,8 +137,6 @@ impl SvgRenderer {
             transform: RenderTransform::Transform2D(camera),
             ..Default::default()
         });
-
-        self.viewport_size = viewport_size;
         self.scene_proxy = Some(scene_proxy);
 
         Ok(())
@@ -171,7 +149,7 @@ impl SvgRenderer {
 
         if self.renderer.is_none() {
             let (w, h) = target_size.unwrap();
-            self.set_target(0, 0, 0, w, h);
+            self.set_target(0, w, h);
         }
 
         let scene_proxy = self.scene_proxy.as_mut().unwrap();
@@ -181,7 +159,7 @@ impl SvgRenderer {
             show_debug_ui: false,
             background_color: Some(self.clear_color),
             dest: DestFramebuffer::Default {
-                viewport: RectI::new(self.viewport_offset, self.viewport_size),
+                viewport: RectI::new(self.viewport_offset, self.viewport_size.unwrap()),
                 window_size: self.target_size,
             },
         };
@@ -194,6 +172,42 @@ impl SvgRenderer {
         renderer.device().end_commands();
 
         Ok(())
+    }
+}
+
+impl SvgRenderer {
+    // 设置 渲染目标
+    fn set_target(&mut self, fbo_id: u32, target_w: i32, target_h: i32) {
+        self.target_size = vec2i(target_w, target_h);
+
+        let viewport_size = match self.viewport_size {
+            Some(s) => s,
+            None => vec2i(1, 1),
+        };
+
+        self.renderer = Some(Renderer::new(
+            DeviceImpl::new(self.gl_version, fbo_id),
+            &FilesystemResourceLoader::locate(),
+            RendererMode {
+                level: self.gl_level,
+            },
+            RendererOptions {
+                background_color: Some(self.clear_color),
+                show_debug_ui: false,
+                dest: DestFramebuffer::Default {
+                    viewport: RectI::new(self.viewport_offset, viewport_size),
+                    window_size: self.target_size,
+                },
+            },
+        ));
+    }
+
+    // 设置 视口
+    fn set_viewport(&mut self, x: i32, y: i32, size: Option<(i32, i32)>) {
+        self.viewport_offset = vec2i(x, y);
+        if let Some((w, h)) = size {
+            self.viewport_size = Some(vec2i(w, h));
+        }
     }
 }
 

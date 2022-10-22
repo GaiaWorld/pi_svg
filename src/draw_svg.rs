@@ -20,6 +20,7 @@ use pathfinder_svg::SVGScene;
 use thiserror::Error;
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
 
+/// SVG 解析和渲染遇到 的 错误
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum SvgError {
     #[error("LoadSvg failed: `{0}`")]
@@ -32,10 +33,11 @@ pub enum SvgError {
     NoSize,
 }
 
+/// Svg 渲染器
 pub struct SvgRenderer {
     // GL 版本，Windows 4.0，Android EL3
     gl_version: GLVersion,
-
+    /// 为了兼容 手机，暂时用 D3D9
     gl_level: RendererLevel,
 
     // 到 load_svg 创建
@@ -74,63 +76,13 @@ impl Default for SvgRenderer {
 }
 
 impl SvgRenderer {
-    pub fn load_svg(&mut self, data: &[u8]) -> Result<(), SvgError> {
-        self.scene_proxy = None;
-
-        let svg = match SvgTree::from_data(data, &UsvgOptions::default()) {
-            Ok(svg) => svg,
-            Err(e) => return Err(SvgError::Load(e.to_string())),
-        };
-
-        let scene = SVGScene::from_tree_and_scene(&svg, Scene::new());
-        if !scene.result_flags.is_empty() {
-            log::warn!(
-                "Warning: These features in the SVG are unsupported: {}.",
-                scene.result_flags
-            );
-        }
-
-        let svg_node = svg.svg_node();
-        let size = svg_node.size;
-        let view_box = svg_node.view_box;
-        log::info!("svg size = {:?}, view_box = {:?}", size, view_box);
-
-        let viewport = RectI::new(
-            Vector2I::new(0, 0),
-            Vector2I::new(size.width() as i32, size.height() as i32),
-        );
-
-        let mut scene = scene.scene;
-
-        // ============ load scene ============
-
-        let view_box = scene.view_box();
-        scene.set_view_box(RectF::new(Vector2F::zero(), viewport.size().to_f32()));
-
-        let scene_proxy = SceneProxy::from_scene(scene, self.gl_level, SequentialExecutor);
-
-        let viewport_size = viewport.size();
-        let s = 1.0 / f32::min(view_box.size().x(), view_box.size().y());
-        let scale = i32::min(viewport_size.x(), viewport_size.y()) as f32 * s;
-        let origin = viewport_size.to_f32() * 0.5 - view_box.size() * (scale * 0.5);
-        let camera = Transform2F::from_scale(scale).translate(origin);
-
-        let build_options = BuildOptions {
-            transform: RenderTransform::Transform2D(camera),
-            ..Default::default()
-        };
-        scene_proxy.build(build_options);
-
-        self.viewport_size = viewport_size;
-        self.scene_proxy = Some(scene_proxy);
-
-        Ok(())
-    }
-
+    /// 设置背景色
     pub fn set_clear_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
         self.clear_color = ColorF::new(r, g, b, a);
     }
 
+    /// 设置 渲染目标
+    /// 注：viewport的 w, h 需要从 svg 取得
     pub fn set_target(
         &mut self,
         fbo_id: u32,
@@ -159,6 +111,59 @@ impl SvgRenderer {
         ));
     }
 
+    /// 加载 svg 二进制数据，格式 见 examples/ 的 svg 文件
+    pub fn load_svg(&mut self, data: &[u8]) -> Result<(), SvgError> {
+        self.scene_proxy = None;
+
+        let svg = match SvgTree::from_data(data, &UsvgOptions::default()) {
+            Ok(svg) => svg,
+            Err(e) => return Err(SvgError::Load(e.to_string())),
+        };
+
+        let scene = SVGScene::from_tree_and_scene(&svg, Scene::new());
+        if !scene.result_flags.is_empty() {
+            log::warn!(
+                "Warning: These features in the SVG are unsupported: {}.",
+                scene.result_flags
+            );
+        }
+
+        let svg_node = svg.svg_node();
+        let size = svg_node.size;
+        let view_box = svg_node.view_box;
+        log::info!("svg size = {:?}, view_box = {:?}", size, view_box);
+
+        let viewport = RectI::new(
+            Vector2I::new(0, 0),
+            Vector2I::new(size.width() as i32, size.height() as i32),
+        );
+
+        let mut scene = scene.scene;
+
+        // ============ load scene_proxy ============
+
+        let view_box = scene.view_box();
+        scene.set_view_box(RectF::new(Vector2F::zero(), viewport.size().to_f32()));
+
+        let scene_proxy = SceneProxy::from_scene(scene, self.gl_level, SequentialExecutor);
+
+        let viewport_size = viewport.size();
+        let s = 1.0 / f32::min(view_box.size().x(), view_box.size().y());
+        let scale = i32::min(viewport_size.x(), viewport_size.y()) as f32 * s;
+        let origin = viewport_size.to_f32() * 0.5 - view_box.size() * (scale * 0.5);
+        let camera = Transform2F::from_scale(scale).translate(origin);
+
+        scene_proxy.build(BuildOptions {
+            transform: RenderTransform::Transform2D(camera),
+            ..Default::default()
+        });
+
+        self.viewport_size = viewport_size;
+        self.scene_proxy = Some(scene_proxy);
+
+        Ok(())
+    }
+
     pub fn draw_once(&mut self, target_size: Option<(i32, i32)>) -> Result<(), SvgError> {
         if self.scene_proxy.is_none() {
             return Err(SvgError::NoLoad);
@@ -173,8 +178,8 @@ impl SvgRenderer {
         let renderer = self.renderer.as_mut().unwrap();
 
         *renderer.options_mut() = RendererOptions {
-            background_color: Some(self.clear_color),
             show_debug_ui: false,
+            background_color: Some(self.clear_color),
             dest: DestFramebuffer::Default {
                 viewport: RectI::new(self.viewport_offset, self.viewport_size),
                 window_size: self.target_size,
@@ -183,7 +188,7 @@ impl SvgRenderer {
 
         // renderer.disable_depth();
         renderer.device().begin_commands();
-        
+
         scene_proxy.render(renderer);
 
         renderer.device().end_commands();

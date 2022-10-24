@@ -14,14 +14,15 @@ fn main() {
     let (window, event_loop) = WindowImpl::new();
 
     let (w, h) = window.get_device_size();
-    let mut app = SvgRenderer::new(0, w, h, (100, 300),  None);
-
-    app.set_clear_color(1.0, 1.0, 0.0, 0.0);
+    let mut svg = SvgRenderer::default();
+    svg.set_target(0, w, h);
+    svg.set_viewport(0, 300, Some((100, 100)));
+    svg.set_clear_color(1.0, 1.0, 0.0, 0.0);
 
     let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
-    app.load_svg(data.as_slice()).unwrap();
+    svg.load_svg(data.as_slice()).unwrap();
 
-    run_loop(window, app, event_loop);
+    run_loop(window, svg, event_loop);
 }
 
 struct WindowImpl(WindowedContext<PossiblyCurrent>);
@@ -61,19 +62,11 @@ impl WindowImpl {
     }
 }
 
-fn run_loop(window: WindowImpl, mut app: SvgRenderer, event_loop: EventLoop<()>) {
+fn run_loop(window: WindowImpl, mut svg: SvgRenderer, event_loop: EventLoop<()>) {
     event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Poll;
+
         match event {
-            Event::MainEventsCleared => {
-                window.0.window().request_redraw();
-            }
-            Event::RedrawRequested(_) => {
-                let (w, h) = window.get_device_size();
-
-                app.draw_once(Some((w, h))).unwrap();
-
-                window.0.swap_buffers().unwrap();
-            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -92,9 +85,17 @@ fn run_loop(window: WindowImpl, mut app: SvgRenderer, event_loop: EventLoop<()>)
             } => {
                 *control_flow = ControlFlow::Exit;
             }
-            _ => {
-                *control_flow = ControlFlow::Poll;
+            Event::MainEventsCleared => {
+                window.0.window().request_redraw();
             }
+            Event::RedrawRequested(_) => {
+                let (w, h) = window.get_device_size();
+
+                svg.draw_once().unwrap();
+
+                window.0.swap_buffers().unwrap();
+            }
+            _ => {}
         };
     });
 }

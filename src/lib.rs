@@ -78,6 +78,11 @@ impl Default for SvgRenderer {
 }
 
 impl SvgRenderer {
+    /// 加载 gl 接口，因为 gl库 版本不同，所以需要显示调用一次 load
+    pub fn load_gl_with(load_func: impl Fn(&str) -> *const std::ffi::c_void) {
+        gl::load_with(load_func);
+    }
+
     /// 设置背景色
     pub fn set_clear_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
         self.clear_color = ColorF::new(r, g, b, a);

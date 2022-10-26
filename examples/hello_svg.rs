@@ -42,7 +42,11 @@ impl WindowImpl {
             .unwrap();
 
         let render_context = unsafe { render_context.make_current().unwrap() };
-        gl::load_with(|name| render_context.get_proc_address(name) as *const _);
+
+        // 测试 不同版本 的 gl 导致的问题
+        gl_old::load_with(|name| render_context.get_proc_address(name) as *const _);
+
+        SvgRenderer::load_gl_with(|name| render_context.get_proc_address(name) as *const _);
 
         (WindowImpl(render_context), event_loop)
     }

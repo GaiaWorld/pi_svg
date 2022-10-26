@@ -1,21 +1,17 @@
 use pathfinder_resources::ResourceLoader;
-use pi_hash::XHashMap;
 
+include!(concat!(env!("OUT_DIR"), "/resource_bindings.rs"));
+
+#[derive(Default)]
 pub struct MemResourceLoader {
-    map: XHashMap<String, Vec<u8>>,
-}
-
-impl Default for MemResourceLoader {
-    fn default() -> Self {
-        let map = Default::default();
-
-        Self { map }
-    }
+    content: ResourceContent,
 }
 
 impl ResourceLoader for MemResourceLoader {
     fn slurp(&self, virtual_path: &str) -> Result<Vec<u8>, std::io::Error> {
-        match self.map.get(virtual_path) {
+        let path = format!("resources/{}", virtual_path);
+
+        match self.content.map.get(path.as_str()) {
             Some(data) => Ok(data.clone()),
             None => Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,

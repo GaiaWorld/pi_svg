@@ -24,3 +24,6 @@ pathfinder_svg = { git = "https://github.com/servo/pathfinder.git", rev = "9e033
 glutin = "0.29"
 env_logger = "0.9"
 gl_old = {package = "gl", version = "0.6"}
+
+[build-dependencies]
+walkdir = "2.3"

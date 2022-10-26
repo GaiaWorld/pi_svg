@@ -15,7 +15,6 @@ use pathfinder_renderer::{
     options::{BuildOptions, RenderTransform},
     scene::Scene,
 };
-use pathfinder_resources::fs::FilesystemResourceLoader;
 use pathfinder_svg::SVGScene;
 use thiserror::Error;
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
@@ -87,17 +86,11 @@ impl SvgRenderer {
 
     /// 设置背景色
     pub fn set_clear_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
-        
-        log::warn!("pi_svg, set_clear_color: (r, g, b, a) = {}, {}, {}, {}", r, g, b, a);
-
         self.clear_color = ColorF::new(r, g, b, a);
     }
 
     // 设置 渲染目标
     pub fn set_target(&mut self, fbo_id: u32, target_w: i32, target_h: i32) {
-
-        log::warn!("pi_svg, set_target: fbo_id = {}, target_w = {}, target_h = {}", fbo_id, target_w, target_h);
-
         self.target_size = vec2i(target_w, target_h);
 
         let viewport_size = match self.viewport_size {
@@ -107,8 +100,8 @@ impl SvgRenderer {
 
         self.renderer = Some(Renderer::new(
             DeviceImpl::new(self.gl_version, fbo_id),
-            // &res::MemResourceLoader::default(),
-            &FilesystemResourceLoader::locate(),
+            &res::MemResourceLoader::default(),
+            // &FilesystemResourceLoader::locate(),
             RendererMode {
                 level: self.gl_level,
             },
@@ -125,9 +118,6 @@ impl SvgRenderer {
 
     // 设置 视口
     pub fn set_viewport(&mut self, x: i32, y: i32, size: Option<(i32, i32)>) {
-
-        log::warn!("pi_svg, set_viewport: x = {}, y = {}, size = {:?}", x, y, size);
-
         self.viewport_offset = vec2i(x, y);
         if let Some((w, h)) = size {
             self.viewport_size = Some(vec2i(w, h));
@@ -136,8 +126,6 @@ impl SvgRenderer {
 
     /// 加载 svg 二进制数据，格式 见 examples/ 的 svg 文件
     pub fn load_svg(&mut self, data: &[u8]) -> Result<(), SvgError> {
-        log::warn!("pi_svg, load_svg: data = {:?}", data);
-
         self.scene_proxy = None;
 
         let svg = match SvgTree::from_data(data, &UsvgOptions::default()) {
@@ -171,8 +159,6 @@ impl SvgRenderer {
     }
 
     pub fn draw_once(&mut self) -> Result<(), SvgError> {
-        log::warn!("pi_svg, draw_once");
-
         if self.scene_proxy.is_none() {
             return Err(SvgError::NoLoad);
         }
@@ -222,8 +208,6 @@ impl SvgRenderer {
         let scale = i32::min(viewport.width(), viewport.height()) as f32 * s;
         let origin = viewport.size().to_f32() * 0.5 - view_box.size() * (scale * 0.5);
         let camera = Transform2F::from_scale(scale).translate(origin);
-
-        log::warn!("pi_svg build_scene, viewport = {:?}, view_box = {:?}", viewport, view_box);
 
         scene_proxy.build(BuildOptions {
             transform: RenderTransform::Transform2D(camera),

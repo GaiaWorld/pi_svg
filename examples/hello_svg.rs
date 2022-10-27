@@ -16,10 +16,8 @@ fn main() {
     let (w, h) = window.get_device_size();
     let mut svg = SvgRenderer::default();
     svg.set_target(0, w, h);
-    svg.set_viewport(0, 300, Some((100, 100)));
-    svg.set_clear_color(1.0, 1.0, 0.0, 0.0);
-
-    let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
+    
+    let data: Vec<u8> = std::fs::read("./examples/circle.svg").unwrap();
     svg.load_svg(data.as_slice()).unwrap();
 
     run_loop(window, svg, event_loop);
@@ -93,7 +91,15 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, event_loop: EventLoop<()>)
                 window.0.window().request_redraw();
             }
             Event::RedrawRequested(_) => {
+                
+                svg.set_viewport(0, 0, None);
+                svg.set_clear_color(0.0, 1.0, 0.0, 0.0);
                 svg.draw_once().unwrap();
+                
+                svg.set_viewport(300, 400, None);
+                svg.set_clear_color(0.0, 0.0, 1.0, 0.0);
+                svg.draw_once().unwrap();
+
                 window.0.swap_buffers().unwrap();
             }
             _ => {}

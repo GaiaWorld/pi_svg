@@ -131,7 +131,7 @@ impl SvgRenderer {
     pub fn load_svg(&mut self, data: &[u8]) -> Result<(), SvgError> {
         self.scene_proxy = None;
 
-        let svg = match SvgTree::from_data(data, &UsvgOptions::default()) {
+        let svg = match SvgTree::from_data(data, &UsvgOptions::default().to_ref()) {
             Ok(svg) => svg,
             Err(e) => return Err(SvgError::Load(e.to_string())),
         };

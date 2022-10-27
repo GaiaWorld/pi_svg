@@ -8,17 +8,17 @@ edition = "2021"
 log = "0.4"
 thiserror = "1.0"
 gl = "0.14"
-usvg = "0.9"
+usvg = "0.23"
 
 pi_hash = "0.1"
 
-pathfinder_color = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
-pathfinder_geometry = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
-pathfinder_gl = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
-pathfinder_gpu = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
-pathfinder_renderer = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
-pathfinder_resources = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
-pathfinder_svg = { git = "https://github.com/servo/pathfinder.git", rev = "9e0331742dedfed41d9e7791a9afbead0e0fbcd5" }
+pathfinder_color = { git = "https://github.com/GaiaWorld/pathfinder.git"}
+pathfinder_geometry = { git = "https://github.com/GaiaWorld/pathfinder.git"}
+pathfinder_gl = { git = "https://github.com/GaiaWorld/pathfinder.git"}
+pathfinder_gpu = { git = "https://github.com/GaiaWorld/pathfinder.git"}
+pathfinder_renderer = { git = "https://github.com/GaiaWorld/pathfinder.git"}
+pathfinder_resources = { git = "https://github.com/GaiaWorld/pathfinder.git"}
+pathfinder_svg = { git = "https://github.com/GaiaWorld/pathfinder.git"}
 
 [dev-dependencies]
 glutin = "0.29"

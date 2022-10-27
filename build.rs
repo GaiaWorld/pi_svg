@@ -34,7 +34,9 @@ pub fn main() {
 
     let dest = PathBuf::from(&env::var("OUT_DIR").unwrap());
     println!("@@@@@@@@@@@@@@@@@@@@ CARGO_HOME = {:?}",&env::var("CARGO_HOME").unwrap());
-
+    println!("@@@@@@@@@@@@@@@@@@@@ CARGO_MANIFEST_DIR = {:?}",&env::var("CARGO_MANIFEST_DIR").unwrap());
+    println!("@@@@@@@@@@@@@@@@@@@@ CARGO_TARGET_DIR = {:?}",&env::var("CARGO_TARGET_DIR").unwrap());
+    
     println!("@@@@@@@@@@@@@@@ build, dst_path = {:?}", dest);
     let mut file = File::create(&dest.join("resource_bindings.rs")).unwrap();
     file.write_all(content.as_bytes()).unwrap();

@@ -9,7 +9,7 @@ pub struct MemResourceLoader {
 
 impl ResourceLoader for MemResourceLoader {
     fn slurp(&self, virtual_path: &str) -> Result<Vec<u8>, std::io::Error> {
-        let path = format!("resources/{}", virtual_path);
+        let path = format!("/resources/{}", virtual_path);
 
         match self.content.map.get(path.as_str()) {
             Some(data) => Ok(data.clone()),

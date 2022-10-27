@@ -4,6 +4,7 @@ use walkdir::WalkDir;
 pub fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
+    let crates_path = env::var("CARGO_MANIFEST_DIR").unwrap().replace('\\', "/");
     let mut content = String::new();
 
     content += r#"
@@ -16,14 +17,19 @@ pub fn main() {
                 let mut map = pi_hash::XHashMap::default();
         "#;
 
-    for entry in WalkDir::new("resources") {
+    for entry in WalkDir::new(crates_path.clone() + "/resources") {
         let entry = entry.unwrap();
         if entry.file_type().is_file() {
             let path = entry.path().to_str().unwrap();
             let path = path.replace('\\', "/");
 
-            content +=
-                format!("map.insert(\"{}\".to_string(), include_bytes!(\"../../../../../{}\").to_vec());\n", path, path).as_str();
+            let relative_path = path.strip_prefix(crates_path.as_str()).unwrap();
+
+            content += format!(
+                "map.insert(\"{}\".to_string(), include_bytes!(\"{}\").to_vec());\n",
+                relative_path, path
+            )
+            .as_str();
         }
     }
 
@@ -33,10 +39,7 @@ pub fn main() {
         }"#;
 
     let dest = PathBuf::from(&env::var("OUT_DIR").unwrap());
-    println!("@@@@@@@@@@@@@@@@@@@@ CARGO_HOME = {:?}",&env::var("CARGO_HOME").unwrap());
-    println!("@@@@@@@@@@@@@@@@@@@@ CARGO_MANIFEST_DIR = {:?}",&env::var("CARGO_MANIFEST_DIR").unwrap());
-    println!("@@@@@@@@@@@@@@@@@@@@ CARGO_TARGET_DIR = {:?}",&env::var("CARGO_TARGET_DIR").unwrap());
-    
+
     println!("@@@@@@@@@@@@@@@ build, dst_path = {:?}", dest);
     let mut file = File::create(&dest.join("resource_bindings.rs")).unwrap();
     file.write_all(content.as_bytes()).unwrap();

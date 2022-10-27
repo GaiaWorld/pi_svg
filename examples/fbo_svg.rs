@@ -19,13 +19,16 @@ fn main() {
 
     let mut svg = SvgRenderer::default();
     svg.set_target(scene.fbo.fbo, w, h);
-    svg.set_viewport(50, 300, Some((210, 110)));
     svg.set_clear_color(1.0, 1.0, 0.0, 1.0);
 
     let data: Vec<u8> = std::fs::read("./examples/circle.svg").unwrap();
     svg.load_svg(data.as_slice()).unwrap();
 
-    svg.draw_once().unwrap();
+    svg.set_viewport(0, 0, None);
+    // svg.draw_once().unwrap();
+
+//     svg.set_viewport(300, 300, None);
+//     svg.draw_once().unwrap();
 
     run_loop(window, svg, scene, event_loop);
 }
@@ -71,7 +74,7 @@ impl WindowImpl {
     }
 }
 
-fn run_loop(window: WindowImpl, svg: SvgRenderer, scene: Scene, event_loop: EventLoop<()>) {
+fn run_loop(window: WindowImpl, mut svg: SvgRenderer, scene: Scene, event_loop: EventLoop<()>) {
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
@@ -99,7 +102,7 @@ fn run_loop(window: WindowImpl, svg: SvgRenderer, scene: Scene, event_loop: Even
             }
             Event::RedrawRequested(_) => {
                 
-                // svg.draw_once().unwrap();
+                svg.draw_once().unwrap();
                 
                 scene.render();
 

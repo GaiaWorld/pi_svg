@@ -46,6 +46,8 @@ pub struct SvgRenderer {
     // 到 set_renderer 创建
     renderer: Option<Renderer<DeviceImpl>>,
 
+    // 渲染目标
+    fbo_id: u32,
     // 清屏色
     clear_color: ColorF,
     // 渲染目标 大小
@@ -67,6 +69,7 @@ impl Default for SvgRenderer {
             scene_proxy: None,
             renderer: None,
 
+            fbo_id: 0,
             clear_color: ColorF::new(1.0, 0.0, 0.0, 1.0),
 
             view_box: RectF::new(vec2f(0.0, 0.0), vec2f(0.0, 0.0)),
@@ -98,15 +101,15 @@ impl SvgRenderer {
             None => vec2i(1, 1),
         };
 
+        self.fbo_id = fbo_id;
         self.renderer = Some(Renderer::new(
-            DeviceImpl::new(self.gl_version, fbo_id),
+            DeviceImpl::new(self.gl_version, self.fbo_id),
             &res::MemResourceLoader::default(),
-            // &FilesystemResourceLoader::locate(),
             RendererMode {
                 level: self.gl_level,
             },
             RendererOptions {
-                background_color: Some(self.clear_color),
+                background_color: None,
                 show_debug_ui: false,
                 dest: DestFramebuffer::Default {
                     viewport: RectI::new(self.viewport_offset, viewport_size),
@@ -169,16 +172,6 @@ impl SvgRenderer {
             self.set_target(0, w, h);
         }
 
-        let renderer = self.renderer.as_mut().unwrap();
-        *renderer.options_mut() = RendererOptions {
-            show_debug_ui: false,
-            background_color: Some(self.clear_color),
-            dest: DestFramebuffer::Default {
-                viewport: RectI::new(self.viewport_offset, self.viewport_size.unwrap()),
-                window_size: self.target_size,
-            },
-        };
-
         // 注：看了 pathfinder 的源码，这里必须要每次 构建
         let scene_proxy = self.scene_proxy.as_mut().unwrap();
         Self::build_scene(
@@ -187,12 +180,37 @@ impl SvgRenderer {
             &self.view_box,
         );
 
-        // renderer.disable_depth();
-        renderer.device().begin_commands();
+        let vp_offset = self.viewport_offset;
+        let vp_size = self.viewport_size.unwrap();
+        unsafe {
+            gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo_id);
 
+            gl::Viewport(vp_offset.x(), vp_offset.y(), vp_size.x(), vp_size.y());
+
+            gl::Enable(gl::SCISSOR_TEST);
+            gl::Scissor(vp_offset.x(), vp_offset.y(), vp_size.x(), vp_size.y());
+            gl::ClearColor(
+                self.clear_color.r(),
+                self.clear_color.g(),
+                self.clear_color.b(),
+                self.clear_color.a(),
+            );
+            gl::Clear(gl::COLOR_BUFFER_BIT);
+            gl::Disable(gl::SCISSOR_TEST);
+        }
+
+        let renderer = self.renderer.as_mut().unwrap();
+        *renderer.options_mut() = RendererOptions {
+            show_debug_ui: false,
+            // 注：这里的清屏，是 清全屏，将前面画的也清空掉了，所以不能用
+            background_color: None,
+            dest: DestFramebuffer::Default {
+                viewport: RectI::new(vp_offset, vp_size),
+                window_size: self.target_size,
+            },
+        };
+        
         scene_proxy.render(renderer);
-
-        renderer.device().end_commands();
 
         Ok(())
     }

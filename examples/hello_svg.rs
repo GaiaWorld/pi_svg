@@ -93,10 +93,7 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, event_loop: EventLoop<()>)
                 window.0.window().request_redraw();
             }
             Event::RedrawRequested(_) => {
-                let (w, h) = window.get_device_size();
-
                 svg.draw_once().unwrap();
-
                 window.0.swap_buffers().unwrap();
             }
             _ => {}

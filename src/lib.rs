@@ -209,7 +209,7 @@ impl SvgRenderer {
                 window_size: self.target_size,
             },
         };
-        
+
         scene_proxy.render(renderer);
 
         Ok(())
@@ -222,8 +222,13 @@ impl SvgRenderer {
 
         scene_proxy.set_view_box(RectF::new(Vector2F::zero(), viewport.size().to_f32()));
 
-        let s = 1.0 / f32::min(view_box.size().x(), view_box.size().y());
-        let scale = i32::min(viewport.width(), viewport.height()) as f32 * s;
+        let scale = f32::min(
+            viewport.width() as f32 / view_box.width(),
+            viewport.height() as f32 / view_box.height(),
+        );
+
+        // https://www.zhangxinxu.com/wordpress/2014/08/svg-viewport-viewbox-preserveaspectratio/
+        // 默认是 preserveAspectRatio="xMidYMid meet" 中心对齐
         let origin = viewport.size().to_f32() * 0.5 - view_box.size() * (scale * 0.5);
         let camera = Transform2F::from_scale(scale).translate(origin);
 

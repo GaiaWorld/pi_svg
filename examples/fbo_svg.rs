@@ -6,7 +6,7 @@ use glutin::{ContextBuilder, GlProfile, GlRequest, PossiblyCurrent, WindowedCont
 use pi_svg::SvgRenderer;
 
 const WINDOW_WIDTH: u32 = 1024;
-const WINDOW_HEIGHT: u32 = 768;
+const WINDOW_HEIGHT: u32 = 1024;
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -24,11 +24,11 @@ fn main() {
     let data: Vec<u8> = std::fs::read("./examples/circle.svg").unwrap();
     svg.load_svg(data.as_slice()).unwrap();
 
-    svg.set_viewport(0, 0, None);
-    // svg.draw_once().unwrap();
+    svg.set_viewport(50, 50, None);
+    svg.draw_once().unwrap();
 
-//     svg.set_viewport(300, 300, None);
-//     svg.draw_once().unwrap();
+    // svg.set_viewport(150, 0, None);
+    // svg.draw_once().unwrap();
 
     run_loop(window, svg, scene, event_loop);
 }
@@ -102,7 +102,7 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, scene: Scene, event_loop: 
             }
             Event::RedrawRequested(_) => {
                 
-                svg.draw_once().unwrap();
+                // svg.draw_once().unwrap();
                 
                 scene.render();
 

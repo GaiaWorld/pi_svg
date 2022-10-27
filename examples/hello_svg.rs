@@ -17,11 +17,11 @@ fn main() {
     let mut svg = SvgRenderer::default();
     svg.set_target(0, w, h);
     
-    let data: Vec<u8> = std::fs::read("./examples/circle.svg").unwrap();
+    let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
     svg.load_svg(data.as_slice()).unwrap();
 
     run_loop(window, svg, event_loop);
-}
+} 
 
 struct WindowImpl(WindowedContext<PossiblyCurrent>);
 
@@ -96,9 +96,9 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, event_loop: EventLoop<()>)
                 svg.set_clear_color(0.0, 1.0, 0.0, 0.0);
                 svg.draw_once().unwrap();
                 
-                svg.set_viewport(300, 400, None);
-                svg.set_clear_color(0.0, 0.0, 1.0, 0.0);
-                svg.draw_once().unwrap();
+                // svg.set_viewport(300, 400, None);
+                // svg.set_clear_color(0.0, 0.0, 1.0, 0.0);
+                // svg.draw_once().unwrap();
 
                 window.0.swap_buffers().unwrap();
             }

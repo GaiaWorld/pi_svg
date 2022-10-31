@@ -4,6 +4,11 @@ version = "0.1.0"
 authors = ["moyy <dev@dev.com>"]
 edition = "2021"
 
+# 默认 禁用 simd
+[features]
+default = ["pf-no-simd"]
+pf-no-simd = ["pathfinder_simd/pf-no-simd"]
+
 [dependencies]
 log = "0.4"
 thiserror = "1.0"
@@ -19,6 +24,7 @@ pathfinder_gpu = { git = "https://github.com/GaiaWorld/pathfinder.git"}
 pathfinder_renderer = { git = "https://github.com/GaiaWorld/pathfinder.git"}
 pathfinder_resources = { git = "https://github.com/GaiaWorld/pathfinder.git"}
 pathfinder_svg = { git = "https://github.com/GaiaWorld/pathfinder.git"}
+pathfinder_simd = { git = "https://github.com/GaiaWorld/pathfinder.git"}
 
 [dev-dependencies]
 glutin = "0.29"

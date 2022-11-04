@@ -7,7 +7,7 @@ use pathfinder_geometry::{
 use pathfinder_gl::{GLDevice as DeviceImpl, GLVersion};
 use pathfinder_gpu::Device;
 use pathfinder_renderer::{
-    concurrent::{executor::SequentialExecutor, scene_proxy::SceneProxy},
+    concurrent::{executor::SequentialExecutor, rayon::RayonExecutor, scene_proxy::SceneProxy},
     gpu::{
         options::{DestFramebuffer, RendererLevel, RendererMode, RendererOptions},
         renderer::Renderer,
@@ -94,6 +94,10 @@ impl SvgRenderer {
 
     // 设置 渲染目标
     pub fn set_target(&mut self, fbo_id: u32, target_w: i32, target_h: i32) {
+        println!(
+            "============= pi_svg: set_target. fbo_id = {}, target_w = {}，target_h = {}",
+            fbo_id, target_w, target_h
+        );
         self.target_size = vec2i(target_w, target_h);
 
         let viewport_size = match self.viewport_size {
@@ -121,6 +125,10 @@ impl SvgRenderer {
 
     // 设置 视口
     pub fn set_viewport(&mut self, x: i32, y: i32, size: Option<(i32, i32)>) {
+        println!(
+            "============= pi_svg: set_viewport. x = {}, y = {}，size = {:?}",
+            x, y, size
+        );
         self.viewport_offset = vec2i(x, y);
         if let Some((w, h)) = size {
             self.viewport_size = Some(vec2i(w, h));
@@ -129,6 +137,10 @@ impl SvgRenderer {
 
     /// 加载 svg 二进制数据，格式 见 examples/ 的 svg 文件
     pub fn load_svg(&mut self, data: &[u8]) -> Result<(), SvgError> {
+        println!(
+            "============= pi_svg: load_svg, data.len() = {}",
+            data.len()
+        );
         self.scene_proxy = None;
 
         let svg = match SvgTree::from_data(data, &UsvgOptions::default().to_ref()) {
@@ -155,13 +167,16 @@ impl SvgRenderer {
         self.scene_proxy = Some(SceneProxy::from_scene(
             scene.scene,
             self.gl_level,
-            SequentialExecutor,
+            RayonExecutor,
+            // SequentialExecutor,
         ));
 
         Ok(())
     }
 
     pub fn draw_once(&mut self) -> Result<(), SvgError> {
+        println!("============= pi_svg: draw_once");
+
         if self.scene_proxy.is_none() {
             return Err(SvgError::NoLoad);
         }
@@ -189,6 +204,7 @@ impl SvgRenderer {
 
             gl::Enable(gl::SCISSOR_TEST);
             gl::Scissor(vp_offset.x(), vp_offset.y(), vp_size.x(), vp_size.y());
+
             gl::ClearColor(
                 self.clear_color.r(),
                 self.clear_color.g(),
@@ -218,6 +234,11 @@ impl SvgRenderer {
 
 impl SvgRenderer {
     fn build_scene(scene_proxy: &mut SceneProxy, viewport: (Vector2I, Vector2I), view_box: &RectF) {
+        println!(
+            "pi_svg, build_scene: viewport = {:?}, view_box = {:?}",
+            viewport, view_box
+        );
+
         let viewport = RectI::new(viewport.0, viewport.1);
 
         scene_proxy.set_view_box(RectF::new(Vector2F::zero(), viewport.size().to_f32()));

@@ -5,8 +5,8 @@ use glutin::window::WindowBuilder;
 use glutin::{ContextBuilder, GlProfile, GlRequest, PossiblyCurrent, WindowedContext};
 use pi_svg::SvgRenderer;
 
-const WINDOW_WIDTH: u32 = 1024;
-const WINDOW_HEIGHT: u32 = 1024;
+const WINDOW_WIDTH: u32 = 1920;
+const WINDOW_HEIGHT: u32 = 1080;
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -15,7 +15,7 @@ fn main() {
 
     let (w, h) = window.get_device_size();
 
-    let scene = Scene::new(500, 500);
+    let scene = Scene::new(WINDOW_WIDTH, WINDOW_HEIGHT);
 
     let mut svg = SvgRenderer::default();
     svg.set_target(scene.fbo.fbo, w, h);
@@ -24,7 +24,7 @@ fn main() {
     let data: Vec<u8> = std::fs::read("./examples/circle.svg").unwrap();
     svg.load_svg(data.as_slice()).unwrap();
 
-    svg.set_viewport(50, 50, None);
+    svg.set_viewport(0, 0, None);
     svg.draw_once().unwrap();
 
     // svg.set_viewport(150, 0, None);
@@ -101,8 +101,8 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, scene: Scene, event_loop: 
                 window.0.window().request_redraw();
             }
             Event::RedrawRequested(_) => {
-                
-                // svg.draw_once().unwrap();
+                svg.set_viewport(0, 0, None);
+                svg.draw_once().unwrap();
                 
                 scene.render();
 
@@ -188,6 +188,7 @@ impl Fbo {
                 gl::TEXTURE_2D,
                 texture,
                 0,
+
             );
 
             let mut rbo = std::mem::zeroed();

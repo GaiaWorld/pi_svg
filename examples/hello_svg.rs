@@ -1,3 +1,5 @@
+use std::time::{Instant, Duration};
+
 use glutin::dpi::PhysicalSize;
 use glutin::event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use glutin::event_loop::{ControlFlow, EventLoop};
@@ -5,8 +7,8 @@ use glutin::window::WindowBuilder;
 use glutin::{ContextBuilder, GlProfile, GlRequest, PossiblyCurrent, WindowedContext};
 use pi_svg::SvgRenderer;
 
-const WINDOW_WIDTH: u32 = 1024;
-const WINDOW_HEIGHT: u32 = 768;
+const WINDOW_WIDTH: u32 = 1920;
+const WINDOW_HEIGHT: u32 = 1080;
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -17,7 +19,8 @@ fn main() {
     let mut svg = SvgRenderer::default();
     svg.set_target(0, w, h);
     
-    let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
+    // let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
+    let data: Vec<u8> = std::fs::read("./examples/circle.svg").unwrap();
     svg.load_svg(data.as_slice()).unwrap();
 
     run_loop(window, svg, event_loop);
@@ -65,6 +68,9 @@ impl WindowImpl {
 }
 
 fn run_loop(window: WindowImpl, mut svg: SvgRenderer, event_loop: EventLoop<()>) {
+    let mut frame = 0;
+    let mut tm = Instant::now();
+    let mut x = 0;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
@@ -92,7 +98,24 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, event_loop: EventLoop<()>)
             }
             Event::RedrawRequested(_) => {
                 
-                svg.set_viewport(0, 0, None);
+                frame += 1;
+
+                let now = Instant::now();
+                let d = now.duration_since(tm);
+                if d >= Duration::from_secs(1) {
+                    println!("fps: {}", 1000.0 * frame as f32 / d.as_millis() as f32);
+                    
+                    frame = 0;
+                    tm = now;
+                }
+
+                let t = 0.004 * d.as_millis() as f32;
+                x += t as i32;
+                if x > 100 {
+                    x = 0;
+                }
+
+                svg.set_viewport(x, 0, None);
                 svg.set_clear_color(0.0, 1.0, 0.0, 0.0);
                 svg.draw_once().unwrap();
                 

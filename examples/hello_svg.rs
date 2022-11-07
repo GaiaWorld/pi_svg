@@ -65,10 +65,10 @@ fn run_loop(window: WindowImpl, event_loop: EventLoop<()>) {
     let mut x = 0;
 
     let mut svg = SvgRenderer::default();
-    let data: Vec<u8> = std::fs::read("./1.svg").unwrap();
+    let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
 
     let mut r = 0.0;
-    let count = 1000;
+    let count = 1;
 
     let b = Instant::now();
     for i in 0..count {
@@ -77,7 +77,7 @@ fn run_loop(window: WindowImpl, event_loop: EventLoop<()>) {
     }
     let total = b.elapsed().as_millis() as f32;
     println!(
-        "load_svg: 1.svg, count = {}, total time = {} ms, avg time = {} ms",
+        "load_svg: examples/Ghostscript_Tiger, count = {}, total time = {} ms, avg time = {} ms",
         count,
         total,
         total / count as f32,
@@ -126,7 +126,7 @@ fn run_loop(window: WindowImpl, event_loop: EventLoop<()>) {
                     x = 0;
                 }
 
-                let scene = svg.load_svg(data.as_slice()).unwrap();
+                let scene: pi_svg::Scene = svg.load_svg(data.as_slice()).unwrap();
 
                 svg.set_target(0, 1920, 1080);
                 svg.set_viewport(x, 0, None);

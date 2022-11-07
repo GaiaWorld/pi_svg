@@ -15,13 +15,13 @@ use pathfinder_renderer::{
         renderer::Renderer,
     },
     options::{BuildOptions, RenderTransform},
-    scene::Scene,
 };
 use pathfinder_svg::SVGScene;
-use pi_hash::XHashMap;
 use res::MemResourceLoader;
 use thiserror::Error;
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
+
+pub use pathfinder_renderer::scene::Scene;
 
 mod res;
 
@@ -180,7 +180,7 @@ impl SvgRenderer {
 
     pub fn draw_once(&mut self, scene: &Scene) -> Result<(), SvgError> {
         self.scene_proxy.replace_scene(scene.clone());
-        
+
         // 注：看了 pathfinder 的源码，这里必须要每次 构建
         Self::build_scene(
             &mut self.scene_proxy,

@@ -4,6 +4,8 @@ use glutin::event_loop::{ControlFlow, EventLoop};
 use glutin::window::WindowBuilder;
 use glutin::{ContextBuilder, GlProfile, GlRequest, PossiblyCurrent, WindowedContext};
 use pi_svg::SvgRenderer;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 const WINDOW_WIDTH: u32 = 1920;
 const WINDOW_HEIGHT: u32 = 1080;
@@ -15,10 +17,46 @@ fn main() {
 
     let (w, h) = window.get_device_size();
 
-    let scene = Scene::new(WINDOW_WIDTH, WINDOW_HEIGHT);
+    let mut scene = Scene::new(WINDOW_WIDTH, WINDOW_HEIGHT);
+    let shader = Rc::new(Shader::new(VS_SOURCE, FS_SOURCE));
+
+    let data = [
+        (
+            std::fs::read("./examples/polylines/1.svg").unwrap(),
+            scene.create_fbo(WINDOW_WIDTH, WINDOW_HEIGHT),
+        ),
+        (
+            std::fs::read("./examples/polylines/2.svg").unwrap(),
+            scene.create_fbo(WINDOW_WIDTH, WINDOW_HEIGHT),
+        ),
+        (
+            std::fs::read("./examples/polylines/3.svg").unwrap(),
+            scene.create_fbo(WINDOW_WIDTH, WINDOW_HEIGHT),
+        ),
+    ];
+
+    scene.create_quad(
+        data[0].1.texture.clone(),
+        (-0.6, -0.6),
+        (0.5, 0.5),
+        shader.clone(),
+    );
+    scene.create_quad(
+        data[1].1.texture.clone(),
+        (0.1, 0.1),
+        (0.5, 0.5),
+        shader.clone(),
+    );
+    scene.create_quad(
+        data[2].1.texture.clone(),
+        (-0.6, 0.1),
+        (0.5, 0.5),
+        shader.clone(),
+    );
 
     let mut svg = SvgRenderer::default();
-    run_loop(window, svg, scene, event_loop);
+
+    run_loop(window, svg, scene, data, event_loop);
 }
 
 struct WindowImpl(WindowedContext<PossiblyCurrent>);
@@ -62,9 +100,15 @@ impl WindowImpl {
     }
 }
 
-fn run_loop(window: WindowImpl, mut svg: SvgRenderer, scene: Scene, event_loop: EventLoop<()>) {
-    let svg_key = 1;
-    let svg_data: Vec<u8> = std::fs::read("./examples/circle.svg").unwrap();
+fn run_loop(
+    window: WindowImpl,
+    mut svg: SvgRenderer,
+    scene: Scene,
+    data: [(Vec<u8>, Fbo); 3],
+    event_loop: EventLoop<()>,
+) {
+    let mut frame = 0;
+    let mut tm = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -92,12 +136,31 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, scene: Scene, event_loop: 
                 window.0.window().request_redraw();
             }
             Event::RedrawRequested(_) => {
-                svg.load_svg(svg_key, svg_data.as_slice()).unwrap();
-            
-                svg.set_clear_color(1.0, 1.0, 0.0, 1.0);
-                svg.set_viewport(0, 0, None);
-                svg.draw_once(svg_key).unwrap();
-            
+                frame += 1;
+
+                let now = Instant::now();
+                let d = now.duration_since(tm);
+                if d >= Duration::from_secs(1) {
+                    println!("fps: {}", 1000.0 * frame as f32 / d.as_millis() as f32);
+
+                    frame = 0;
+                    tm = now;
+                }
+
+                for i in 0..3 {
+                    let (data, fbo) = &data[i];
+
+                    let svg_key = i as u32 + 1;
+                    svg.load_svg(svg_key, data.as_slice()).unwrap();
+
+                    svg.set_target(fbo.fbo, WINDOW_WIDTH as i32, WINDOW_HEIGHT as i32);
+                    svg.set_clear_color(1.0, 1.0, 0.0, 1.0);
+
+                    svg.set_viewport(0, 0, None);
+                    svg.draw_once(svg_key).unwrap();
+                }
+
+                scene.clear();
                 scene.render();
 
                 window.0.swap_buffers().unwrap();
@@ -108,63 +171,73 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, scene: Scene, event_loop: 
 }
 
 struct Scene {
-    fbo: Fbo,
-    shader: Shader,
-    mesh: Mesh,
+    width: u32,
+    height: u32,
+
+    meshes: Vec<Mesh>,
 }
 
 impl Scene {
-    fn new(w: u32, h: u32) -> Self {
-        let fbo = Fbo::new(w, h);
+    fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            meshes: vec![],
+        }
+    }
+
+    fn create_quad(
+        &mut self,
+        texture: Rc<u32>,
+        orgin: (f32, f32),
+        size: (f32, f32),
+        shader: Rc<Shader>,
+    ) {
+        let (x, y) = orgin;
+        let (w, h) = size;
 
         #[rustfmt::skip]
         let quad: [f32; 16] = [
             // pos2, texcoord
-            -0.5, -0.5,  0.0,  0.0,
-            0.5, -0.5,  1.0,  0.0,
-            0.5,  0.5,  1.0,  1.0,
-            -0.5,  0.5,  0.0,  1.0,
+            x, y,  0.0,  0.0,
+            x + w, y,  1.0,  0.0,
+            x + w,  y + h,  1.0,  1.0,
+            x,  y + h,  0.0,  1.0,
         ];
 
         let indices = [0, 1, 2, 0, 2, 3];
-        let mesh = Mesh::new(quad.as_slice(), indices.as_slice());
 
-        let shader = Shader::new(VS_SOURCE, FS_SOURCE, mesh.vbo);
-
-        Self { fbo, shader, mesh }
+        let m = Mesh::new(quad.as_slice(), indices.as_slice(), texture, shader);
+        self.meshes.push(m);
     }
 
-    fn render(&self) {
+    fn create_fbo(&self, w: u32, h: u32) -> Fbo {
+        Fbo::new(w, h)
+    }
+
+    fn clear(&self) {
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 
             gl::Viewport(0, 0, WINDOW_WIDTH as i32, WINDOW_HEIGHT as i32);
             gl::Scissor(0, 0, WINDOW_WIDTH as i32, WINDOW_HEIGHT as i32);
 
-            gl::ClearColor(1.0, 1.0, 1.0, 1.0);
+            gl::ClearColor(0.0, 0.0, 1.0, 1.0);
             gl::ClearDepthf(1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+        }
+    }
 
-            gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_2D, self.fbo.texture);
-
-            gl::UseProgram(self.shader.program);
-
-            gl::BindVertexArray(self.shader.vao);
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.mesh.ibo);
-            gl::DrawElements(
-                gl::TRIANGLES,
-                self.mesh.get_indices_len() as i32,
-                gl::UNSIGNED_SHORT,
-                std::ptr::null(),
-            );
+    fn render(&self) {
+        for mesh in self.meshes.iter() {
+            mesh.draw();
         }
     }
 }
 
 struct Fbo {
     fbo: u32,
-    texture: u32,
+    texture: Rc<u32>,
 }
 
 impl Fbo {
@@ -182,7 +255,6 @@ impl Fbo {
                 gl::TEXTURE_2D,
                 texture,
                 0,
-
             );
 
             let mut rbo = std::mem::zeroed();
@@ -198,7 +270,10 @@ impl Fbo {
 
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 
-            Self { texture, fbo }
+            Self {
+                texture: Rc::new(texture),
+                fbo,
+            }
         }
     }
 
@@ -232,12 +307,14 @@ impl Fbo {
 }
 
 struct Shader {
-    vao: u32,
     program: u32,
+
+    pos_attrib: i32,
+    texcoord_attrib: i32,
 }
 
 impl Shader {
-    fn new(vs: &[u8], fs: &[u8], vbo: u32) -> Self {
+    fn new(vs: &[u8], fs: &[u8]) -> Self {
         unsafe {
             let vs = Self::create_shader(gl::VERTEX_SHADER, vs);
             let fs = Self::create_shader(gl::FRAGMENT_SHADER, fs);
@@ -261,40 +338,16 @@ impl Shader {
             gl::DeleteShader(vs);
             gl::DeleteShader(fs);
 
-            let mut vao = std::mem::zeroed();
-            gl::GenVertexArrays(1, &mut vao);
-
-            gl::BindVertexArray(vao);
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-
             let pos_attrib = gl::GetAttribLocation(program, b"position\0".as_ptr() as *const _);
-            gl::EnableVertexAttribArray(pos_attrib as gl::types::GLuint);
-
-            gl::VertexAttribPointer(
-                pos_attrib as gl::types::GLuint,
-                2,
-                gl::FLOAT,
-                0,
-                4 * std::mem::size_of::<f32>() as gl::types::GLsizei,
-                std::ptr::null(),
-            );
 
             let texcoord_attrib =
                 gl::GetAttribLocation(program, b"texcoord\0".as_ptr() as *const _);
-            gl::VertexAttribPointer(
-                texcoord_attrib as gl::types::GLuint,
-                2,
-                gl::FLOAT,
-                0,
-                4 * std::mem::size_of::<f32>() as gl::types::GLsizei,
-                (2 * std::mem::size_of::<f32>()) as *const () as *const _,
-            );
-            gl::EnableVertexAttribArray(texcoord_attrib as gl::types::GLuint);
 
-            gl::BindVertexArray(0);
-
-            Self { program, vao }
+            Self {
+                program,
+                texcoord_attrib,
+                pos_attrib,
+            }
         }
     }
 
@@ -312,21 +365,26 @@ impl Shader {
 }
 
 struct Mesh {
-    vbo: u32,
-    ibo: u32,
+    vbo: Rc<u32>,
+
+    ibo: Rc<u32>,
     indices_len: u32,
+
+    texture: Rc<u32>,
+
+    shader: Rc<Shader>,
 }
 
 impl Mesh {
-    pub fn new(pos: &[f32], indices: &[u16]) -> Self {
+    pub fn new(vertex: &[f32], indices: &[u16], texture: Rc<u32>, shader: Rc<Shader>) -> Self {
         unsafe {
             let mut vbo = std::mem::zeroed();
             gl::GenBuffers(1, &mut vbo);
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
             gl::BufferData(
                 gl::ARRAY_BUFFER,
-                (pos.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr,
-                pos.as_ptr() as *const _,
+                (vertex.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr,
+                vertex.as_ptr() as *const _,
                 gl::STATIC_DRAW,
             );
 
@@ -342,15 +400,58 @@ impl Mesh {
             );
 
             Self {
-                vbo,
-                ibo,
+                vbo: Rc::new(vbo),
+                ibo: Rc::new(ibo),
                 indices_len: indices_len as u32,
+
+                texture,
+                shader,
             }
         }
     }
 
     fn get_indices_len(&self) -> u32 {
         self.indices_len
+    }
+
+    fn draw(&self) {
+        let shader = &self.shader;
+        unsafe {
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, self.texture.as_ref().clone());
+
+            gl::UseProgram(shader.program);
+
+            gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo.as_ref().clone());
+
+            gl::EnableVertexAttribArray(shader.pos_attrib as gl::types::GLuint);
+            gl::VertexAttribPointer(
+                shader.pos_attrib as gl::types::GLuint,
+                2,
+                gl::FLOAT,
+                0,
+                4 * std::mem::size_of::<f32>() as gl::types::GLsizei,
+                std::ptr::null(),
+            );
+
+            gl::EnableVertexAttribArray(shader.texcoord_attrib as gl::types::GLuint);
+            gl::VertexAttribPointer(
+                shader.texcoord_attrib as gl::types::GLuint,
+                2,
+                gl::FLOAT,
+                0,
+                4 * std::mem::size_of::<f32>() as gl::types::GLsizei,
+                (2 * std::mem::size_of::<f32>()) as *const () as *const _,
+            );
+
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.ibo.as_ref().clone());
+            gl::DrawElements(
+                gl::TRIANGLES,
+                self.get_indices_len() as i32,
+                gl::UNSIGNED_SHORT,
+                std::ptr::null(),
+            );
+        }
     }
 }
 
@@ -379,6 +480,5 @@ uniform sampler2D sampler;
 
 void main() {
     gl_FragColor = vec4(texture2D(sampler, v_texcoord).rgb, 1.0);
-    
 }
 \0";

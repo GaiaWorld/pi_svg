@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use pathfinder_color::ColorF;
 use pathfinder_geometry::{
     rect::{RectF, RectI},
@@ -16,6 +18,8 @@ use pathfinder_renderer::{
     scene::Scene,
 };
 use pathfinder_svg::SVGScene;
+use pi_hash::XHashMap;
+use res::MemResourceLoader;
 use thiserror::Error;
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
 
@@ -24,6 +28,9 @@ mod res;
 /// SVG 解析和渲染遇到 的 错误
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum SvgError {
+    #[error("LoadSvg failed: Invalid Scene Key, can't set 0")]
+    InvalidSceneKey,
+
     #[error("LoadSvg failed: `{0}`")]
     Load(String),
 
@@ -36,15 +43,14 @@ pub enum SvgError {
 
 /// Svg 渲染器
 pub struct SvgRenderer {
-    // GL 版本，Windows 4.0，Android EL3
-    gl_version: GLVersion,
-    /// 为了兼容 手机，暂时用 D3D9
     gl_level: RendererLevel,
 
-    // 到 load_svg 创建
-    scene_proxy: Option<SceneProxy>,
-    // 到 set_renderer 创建
-    renderer: Option<Renderer<DeviceImpl>>,
+    scene_proxy: SceneProxy,
+    renderer: Renderer<DeviceImpl>,
+
+    // 场景, 0 不能用做键
+    last_svg_key: u32,
+    scene_map: XHashMap<u32, Scene>,
 
     // 渲染目标
     fbo_id: u32,
@@ -62,12 +68,39 @@ pub struct SvgRenderer {
 
 impl Default for SvgRenderer {
     fn default() -> Self {
-        Self {
-            gl_version: get_native_gl_version(),
-            gl_level: RendererLevel::D3D9,
+        // GL 版本，Windows 4.0，Android EL3
+        let gl_version = get_native_gl_version();
 
-            scene_proxy: None,
-            renderer: None,
+        // 为了兼容 手机，暂时用 D3D9
+        let gl_level = RendererLevel::D3D9;
+
+        let device = DeviceImpl::new(gl_version, 0);
+        let resource_loader = MemResourceLoader::default();
+
+        let renderer = Renderer::new(
+            device,
+            &resource_loader,
+            RendererMode { level: gl_level },
+            RendererOptions {
+                background_color: None,
+                show_debug_ui: false,
+                dest: DestFramebuffer::Default {
+                    viewport: RectI::new(vec2i(0, 0), vec2i(1, 1)),
+                    window_size: vec2i(1, 1),
+                },
+            },
+        );
+
+        let scene_proxy = SceneProxy::new(gl_level, RayonExecutor);
+
+        Self {
+            gl_level,
+
+            renderer,
+            scene_proxy,
+
+            last_svg_key: 0,
+            scene_map: XHashMap::default(),
 
             fbo_id: 0,
             clear_color: ColorF::new(1.0, 0.0, 0.0, 1.0),
@@ -94,10 +127,11 @@ impl SvgRenderer {
 
     // 设置 渲染目标
     pub fn set_target(&mut self, fbo_id: u32, target_w: i32, target_h: i32) {
-        println!(
-            "============= pi_svg: set_target. fbo_id = {}, target_w = {}，target_h = {}",
-            fbo_id, target_w, target_h
-        );
+        // println!(
+        //     "============= pi_svg: set_target. fbo_id = {}, target_w = {}，target_h = {}",
+        //     fbo_id, target_w, target_h
+        // );
+
         self.target_size = vec2i(target_w, target_h);
 
         let viewport_size = match self.viewport_size {
@@ -106,29 +140,16 @@ impl SvgRenderer {
         };
 
         self.fbo_id = fbo_id;
-        self.renderer = Some(Renderer::new(
-            DeviceImpl::new(self.gl_version, self.fbo_id),
-            &res::MemResourceLoader::default(),
-            RendererMode {
-                level: self.gl_level,
-            },
-            RendererOptions {
-                background_color: None,
-                show_debug_ui: false,
-                dest: DestFramebuffer::Default {
-                    viewport: RectI::new(self.viewport_offset, viewport_size),
-                    window_size: self.target_size,
-                },
-            },
-        ));
+        self.renderer.device_mut().set_default_framebuffer(fbo_id);
     }
 
     // 设置 视口
     pub fn set_viewport(&mut self, x: i32, y: i32, size: Option<(i32, i32)>) {
-        println!(
-            "============= pi_svg: set_viewport. x = {}, y = {}，size = {:?}",
-            x, y, size
-        );
+        // println!(
+        //     "============= pi_svg: set_viewport, x = {}, y = {}，size = {:?}",
+        //     x, y, size
+        // );
+
         self.viewport_offset = vec2i(x, y);
         if let Some((w, h)) = size {
             self.viewport_size = Some(vec2i(w, h));
@@ -136,14 +157,25 @@ impl SvgRenderer {
     }
 
     /// 加载 svg 二进制数据，格式 见 examples/ 的 svg 文件
-    pub fn load_svg(&mut self, data: &[u8]) -> Result<(), SvgError> {
-        println!(
-            "============= pi_svg: load_svg, data.len() = {}",
-            data.len()
-        );
-        self.scene_proxy = None;
+    /// svg_key 不能为 0
+    pub fn unload_svg(&mut self, svg_key: u32) {
+        self.scene_map.remove(&svg_key);
+    }
 
-        let svg = match SvgTree::from_data(data, &UsvgOptions::default().to_ref()) {
+    /// 加载 svg 二进制数据，格式 见 examples/ 的 svg 文件
+    /// svg_key 不能为 0
+    pub fn load_svg(&mut self, svg_key: u32, svg_data: &[u8]) -> Result<(), SvgError> {
+        // println!("pi_svg, load_svg: data.len = {}", data.len());
+
+        if svg_key == 0 {
+            return Err(SvgError::InvalidSceneKey);
+        }
+
+        if self.scene_map.contains_key(&svg_key) {
+            return Ok(());
+        }
+
+        let svg = match SvgTree::from_data(svg_data, &UsvgOptions::default().to_ref()) {
             Ok(svg) => svg,
             Err(e) => return Err(SvgError::Load(e.to_string())),
         };
@@ -164,33 +196,31 @@ impl SvgRenderer {
         }
 
         self.view_box = scene.scene.view_box();
-        self.scene_proxy = Some(SceneProxy::from_scene(
-            scene.scene,
-            self.gl_level,
-            RayonExecutor,
-            // SequentialExecutor,
-        ));
+
+        self.scene_map.insert(svg_key, scene.scene);
 
         Ok(())
     }
 
-    pub fn draw_once(&mut self) -> Result<(), SvgError> {
-        println!("============= pi_svg: draw_once");
-
-        if self.scene_proxy.is_none() {
-            return Err(SvgError::NoLoad);
+    pub fn draw_once(&mut self, svg_key: u32) -> Result<(), SvgError> {
+        if svg_key == 0 {
+            return Err(SvgError::InvalidSceneKey);
         }
 
-        if self.renderer.is_none() {
-            let w = self.target_size.x();
-            let h = self.target_size.y();
-            self.set_target(0, w, h);
+        if self.last_svg_key != svg_key {
+            let scene = match self.scene_map.get(&svg_key) {
+                Some(s) => s.clone(),
+                None => {
+                    return Err(SvgError::NoLoad);
+                }
+            };
+            self.scene_proxy.replace_scene(scene);
+            self.last_svg_key = svg_key;
         }
 
         // 注：看了 pathfinder 的源码，这里必须要每次 构建
-        let scene_proxy = self.scene_proxy.as_mut().unwrap();
         Self::build_scene(
-            scene_proxy,
+            &mut self.scene_proxy,
             (self.viewport_offset, *self.viewport_size.as_ref().unwrap()),
             &self.view_box,
         );
@@ -215,8 +245,7 @@ impl SvgRenderer {
             gl::Disable(gl::SCISSOR_TEST);
         }
 
-        let renderer = self.renderer.as_mut().unwrap();
-        *renderer.options_mut() = RendererOptions {
+        *self.renderer.options_mut() = RendererOptions {
             show_debug_ui: false,
             // 注：这里的清屏，是 清全屏，将前面画的也清空掉了，所以不能用
             background_color: None,
@@ -226,7 +255,7 @@ impl SvgRenderer {
             },
         };
 
-        scene_proxy.render(renderer);
+        self.scene_proxy.render(&mut self.renderer);
 
         Ok(())
     }
@@ -234,10 +263,10 @@ impl SvgRenderer {
 
 impl SvgRenderer {
     fn build_scene(scene_proxy: &mut SceneProxy, viewport: (Vector2I, Vector2I), view_box: &RectF) {
-        println!(
-            "pi_svg, build_scene: viewport = {:?}, view_box = {:?}",
-            viewport, view_box
-        );
+        // println!(
+        //     "pi_svg, build_scene: viewport = {:?}, view_box = {:?}",
+        //     viewport, view_box
+        // );
 
         let viewport = RectI::new(viewport.0, viewport.1);
 

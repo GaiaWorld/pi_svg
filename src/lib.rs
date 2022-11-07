@@ -48,10 +48,6 @@ pub struct SvgRenderer {
     scene_proxy: SceneProxy,
     renderer: Renderer<DeviceImpl>,
 
-    // 场景, 0 不能用做键
-    last_svg_key: u32,
-    scene_map: XHashMap<u32, Scene>,
-
     // 渲染目标
     fbo_id: u32,
     // 清屏色
@@ -98,9 +94,6 @@ impl Default for SvgRenderer {
 
             renderer,
             scene_proxy,
-
-            last_svg_key: 0,
-            scene_map: XHashMap::default(),
 
             fbo_id: 0,
             clear_color: ColorF::new(1.0, 0.0, 0.0, 1.0),
@@ -157,23 +150,8 @@ impl SvgRenderer {
     }
 
     /// 加载 svg 二进制数据，格式 见 examples/ 的 svg 文件
-    /// svg_key 不能为 0
-    pub fn unload_svg(&mut self, svg_key: u32) {
-        self.scene_map.remove(&svg_key);
-    }
-
-    /// 加载 svg 二进制数据，格式 见 examples/ 的 svg 文件
-    /// svg_key 不能为 0
-    pub fn load_svg(&mut self, svg_key: u32, svg_data: &[u8]) -> Result<(), SvgError> {
+    pub fn load_svg(&mut self, svg_data: &[u8]) -> Result<Scene, SvgError> {
         // println!("pi_svg, load_svg: data.len = {}", data.len());
-
-        if svg_key == 0 {
-            return Err(SvgError::InvalidSceneKey);
-        }
-
-        if self.scene_map.contains_key(&svg_key) {
-            return Ok(());
-        }
 
         let svg = match SvgTree::from_data(svg_data, &UsvgOptions::default().to_ref()) {
             Ok(svg) => svg,
@@ -197,27 +175,12 @@ impl SvgRenderer {
 
         self.view_box = scene.scene.view_box();
 
-        self.scene_map.insert(svg_key, scene.scene);
-
-        Ok(())
+        Ok(scene.scene)
     }
 
-    pub fn draw_once(&mut self, svg_key: u32) -> Result<(), SvgError> {
-        if svg_key == 0 {
-            return Err(SvgError::InvalidSceneKey);
-        }
-
-        if self.last_svg_key != svg_key {
-            let scene = match self.scene_map.get(&svg_key) {
-                Some(s) => s.clone(),
-                None => {
-                    return Err(SvgError::NoLoad);
-                }
-            };
-            self.scene_proxy.replace_scene(scene);
-            self.last_svg_key = svg_key;
-        }
-
+    pub fn draw_once(&mut self, scene: &Scene) -> Result<(), SvgError> {
+        self.scene_proxy.replace_scene(scene.clone());
+        
         // 注：看了 pathfinder 的源码，这里必须要每次 构建
         Self::build_scene(
             &mut self.scene_proxy,

@@ -1,4 +1,4 @@
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 use glutin::dpi::PhysicalSize;
 use glutin::event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
@@ -15,12 +15,8 @@ fn main() {
 
     let (window, event_loop) = WindowImpl::new();
 
-    let (w, h) = window.get_device_size();
-    let mut svg = SvgRenderer::default();
-    
-    let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
-    run_loop(window, svg, event_loop);
-} 
+    run_loop(window, event_loop);
+}
 
 struct WindowImpl(WindowedContext<PossiblyCurrent>);
 
@@ -63,14 +59,30 @@ impl WindowImpl {
     }
 }
 
-fn run_loop(window: WindowImpl, mut svg: SvgRenderer, event_loop: EventLoop<()>) {
-    
-    let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
-
+fn run_loop(window: WindowImpl, event_loop: EventLoop<()>) {
     let mut frame = 0;
     let mut tm = Instant::now();
     let mut x = 0;
-    
+
+    let mut svg = SvgRenderer::default();
+    let data: Vec<u8> = std::fs::read("./1.svg").unwrap();
+
+    let mut r = 0.0;
+    let count = 1000;
+
+    let b = Instant::now();
+    for i in 0..count {
+        let scene = svg.load_svg(data.as_slice()).unwrap();
+        r += scene.view_box().origin_x();
+    }
+    let total = b.elapsed().as_millis() as f32;
+    println!(
+        "load_svg: 1.svg, count = {}, total time = {} ms, avg time = {} ms",
+        count,
+        total,
+        total / count as f32,
+    );
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
@@ -97,14 +109,13 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, event_loop: EventLoop<()>)
                 window.0.window().request_redraw();
             }
             Event::RedrawRequested(_) => {
-                
                 frame += 1;
 
                 let now = Instant::now();
                 let d = now.duration_since(tm);
                 if d >= Duration::from_secs(1) {
                     println!("fps: {}", 1000.0 * frame as f32 / d.as_millis() as f32);
-                    
+
                     frame = 0;
                     tm = now;
                 }
@@ -115,15 +126,14 @@ fn run_loop(window: WindowImpl, mut svg: SvgRenderer, event_loop: EventLoop<()>)
                     x = 0;
                 }
 
-                let scene_key = 1;
-                svg.load_scene(scene_key, data.as_slice()).unwrap();
-            
+                let scene = svg.load_svg(data.as_slice()).unwrap();
+
                 svg.set_target(0, 1920, 1080);
                 svg.set_viewport(x, 0, None);
                 svg.set_clear_color(0.0, 1.0, 0.0, 0.0);
-            
-                svg.draw_once(scene_key).unwrap();
-                
+
+                svg.draw_once(&scene).unwrap();
+
                 window.0.swap_buffers().unwrap();
             }
             _ => {}

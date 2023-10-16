@@ -7,8 +7,8 @@ use glutin::window::WindowBuilder;
 use glutin::{ContextBuilder, GlProfile, GlRequest, PossiblyCurrent, WindowedContext};
 use pi_svg::SvgRenderer;
 
-const WINDOW_WIDTH: u32 = 1920;
-const WINDOW_HEIGHT: u32 = 1080;
+const WINDOW_WIDTH: u32 = 1080;
+const WINDOW_HEIGHT: u32 = 720;
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -44,7 +44,7 @@ impl WindowImpl {
         (WindowImpl(render_context), event_loop)
     }
 
-    fn get_device_size(&self) -> (i32, i32) {
+    fn _get_device_size(&self) -> (i32, i32) {
         let window = self.0.window();
 
         let monitor = window.current_monitor().unwrap();
@@ -67,14 +67,14 @@ fn run_loop(window: WindowImpl, event_loop: EventLoop<()>) {
     let mut svg = SvgRenderer::default();
     let data: Vec<u8> = std::fs::read("./examples/Ghostscript_Tiger.svg").unwrap();
 
-    let mut r = 0.0;
+    // let mut r = 0.0;
     let count = 1;
 
     let b = Instant::now();
-    for i in 0..count {
-        let scene = svg.load_svg(data.as_slice()).unwrap();
-        r += scene.view_box().origin_x();
-    }
+    // for _ in 0..count {
+        // let scene = svg.load_svg(data.as_slice()).unwrap();
+        // r += scene.view_box().origin_x();
+    // }
     let total = b.elapsed().as_millis() as f32;
     println!(
         "load_svg: examples/Ghostscript_Tiger, count = {}, total time = {} ms, avg time = {} ms",
@@ -129,7 +129,7 @@ fn run_loop(window: WindowImpl, event_loop: EventLoop<()>) {
                 let scene: pi_svg::Scene = svg.load_svg(data.as_slice()).unwrap();
 
                 svg.set_target(0, 1920, 1080);
-                svg.set_viewport(x, 0, None);
+                svg.set_viewport(x, 0, Some((1080, 720)));
                 svg.set_clear_color(0.0, 1.0, 0.0, 0.0);
 
                 svg.draw_once(&scene).unwrap();

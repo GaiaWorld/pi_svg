@@ -13,10 +13,7 @@
 
 
 precision highp float;
-
-
-
-
+precision highp sampler2D;
 
 uniform mat4 uOldTransform;
 uniform sampler2D uTexture;

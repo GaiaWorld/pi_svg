@@ -13,10 +13,7 @@
 
 
 precision highp float;
-
-
-
-
+precision highp sampler2D;
 
 in vec3 aPosition;
 

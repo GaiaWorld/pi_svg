@@ -13,10 +13,7 @@
 
 
 precision highp float;
-
-
-
-
+precision highp sampler2D;
 
 uniform sampler2D uSrc;
 
@@ -26,6 +23,6 @@ out vec4 oFragColor;
 
 void main(){
     vec4 color = texture(uSrc, vTexCoord);
-    oFragColor = color;
+    oFragColor = vec4(color . rgb * color . a, color . a);
 }
 

@@ -12,15 +12,36 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #extension GL_GOOGLE_include_directive : enable
 
 precision highp float;
+precision highp sampler2D;
 
 
 
 
 
-layout(local_size_x = 16, local_size_y = 4)in;
 
 
 
@@ -59,41 +80,24 @@ layout(local_size_x = 16, local_size_y = 4)in;
 
 
 
+uniform sampler2D uColorTexture0;
+uniform sampler2D uMaskTexture0;
+uniform sampler2D uMaskTexture1;
+uniform sampler2D uDestTexture;
+uniform sampler2D uGammaLUT;
+uniform vec4 uFilterParams0;
+uniform vec4 uFilterParams1;
+uniform vec4 uFilterParams2;
+uniform vec2 uFramebufferSize;
+uniform vec2 uColorTexture0Size;
+uniform int uCtrl;
 
+in vec3 vMaskTexCoord0;
+in vec3 vMaskTexCoord1;
+in vec2 vColorTexCoord0;
+in vec4 vBaseColor;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+out vec4 oFragColor;
 
 
 
@@ -306,7 +310,11 @@ vec4 filterRadialGradient(vec2 colorTexCoord,
     vec2 lineFrom = filterParams0 . xy, lineVector = filterParams0 . zw;
     vec2 radii = filterParams1 . xy, uvOrigin = filterParams1 . zw;
 
-    vec2 dP = colorTexCoord - lineFrom, dC = lineVector;
+
+    fragCoord . y = framebufferSize . y - fragCoord . y;
+
+
+    vec2 dP = fragCoord - lineFrom, dC = lineVector;
     float dR = radii . y - radii . x;
 
     float a = dot(dC, dC)- dR * dR;
@@ -315,12 +323,12 @@ vec4 filterRadialGradient(vec2 colorTexCoord,
     float discrim = b * b - a * c;
 
     vec4 color = vec4(0.0);
-    if(discrim != 0.0){
+    if(abs(discrim)>= 0.00001){
         vec2 ts = vec2(sqrt(discrim)* vec2(1.0, - 1.0)+ vec2(b))/ vec2(a);
         if(ts . x > ts . y)
             ts = ts . yx;
         float t = ts . x >= 0.0 ? ts . x : ts . y;
-        color = texture(colorTexture, uvOrigin + vec2(t, 0.0));
+        color = texture(colorTexture, uvOrigin + vec2(clamp(t, 0.0, 1.0), 0.0));
     }
 
     return color;
@@ -371,18 +379,6 @@ vec4 filterBlur(vec2 colorTexCoord,
     return color / gaussSum;
 }
 
-vec4 filterColorMatrix(vec2 colorTexCoord,
-                       sampler2D colorTexture,
-                       vec4 filterParams0,
-                       vec4 filterParams1,
-                       vec4 filterParams2,
-                       vec4 filterParams3,
-                       vec4 filterParams4){
-    vec4 srcColor = texture(colorTexture, colorTexCoord);
-    mat4 colorMatrix = mat4(filterParams0, filterParams1, filterParams2, filterParams3);
-    return colorMatrix * srcColor + filterParams4;
-}
-
 vec4 filterNone(vec2 colorTexCoord, sampler2D colorTexture){
     return sampleColor(colorTexture, colorTexCoord);
 }
@@ -396,8 +392,6 @@ vec4 filterColor(vec2 colorTexCoord,
                  vec4 filterParams0,
                  vec4 filterParams1,
                  vec4 filterParams2,
-                 vec4 filterParams3,
-                 vec4 filterParams4,
                  int colorFilter){
     switch(colorFilter){
     case 0x1 :
@@ -422,14 +416,6 @@ vec4 filterColor(vec2 colorTexCoord,
                           filterParams0,
                           filterParams1,
                           filterParams2);
-    case 0x4 :
-        return filterColorMatrix(colorTexCoord,
-                          colorTexture,
-                          filterParams0,
-                          filterParams1,
-                          filterParams2,
-                          filterParams3,
-                          filterParams4);
     }
     return filterNone(colorTexCoord, colorTexture);
 }
@@ -563,16 +549,11 @@ vec4 composite(vec4 srcColor,
 
 float sampleMask(float maskAlpha,
                  sampler2D maskTexture,
-                 vec2 maskTextureSize,
                  vec3 maskTexCoord,
                  int maskCtrl){
     if(maskCtrl == 0)
         return maskAlpha;
-
-    ivec2 maskTexCoordI = ivec2(floor(maskTexCoord . xy));
-    vec4 texel = texture(maskTexture,(vec2(maskTexCoordI / ivec2(1, 4))+ 0.5)/ maskTextureSize);
-    float coverage = texel[maskTexCoordI . y % 4]+ maskTexCoord . z;
-
+    float coverage = texture(maskTexture, maskTexCoord . xy). r + maskTexCoord . z;
     if((maskCtrl & 0x1)!= 0)
         coverage = abs(coverage);
     else
@@ -582,46 +563,29 @@ float sampleMask(float maskAlpha,
 
 
 
-vec4 calculateColor(vec2 fragCoord,
-                    sampler2D colorTexture0,
-                    sampler2D maskTexture0,
-                    sampler2D destTexture,
-                    sampler2D gammaLUT,
-                    vec2 colorTextureSize0,
-                    vec2 maskTextureSize0,
-                    vec4 filterParams0,
-                    vec4 filterParams1,
-                    vec4 filterParams2,
-                    vec4 filterParams3,
-                    vec4 filterParams4,
-                    vec2 framebufferSize,
-                    int ctrl,
-                    vec3 maskTexCoord0,
-                    vec2 colorTexCoord0,
-                    vec4 baseColor,
-                    int tileCtrl){
+void calculateColor(int ctrl){
 
-    int maskCtrl0 =(tileCtrl >> 0)& 0x3;
+    int maskCtrl0 =(ctrl >> 0)& 0x3;
+    int maskCtrl1 =(ctrl >> 2)& 0x3;
     float maskAlpha = 1.0;
-    maskAlpha = sampleMask(maskAlpha, maskTexture0, maskTextureSize0, maskTexCoord0, maskCtrl0);
+    maskAlpha = sampleMask(maskAlpha, uMaskTexture0, vMaskTexCoord0, maskCtrl0);
+    maskAlpha = sampleMask(maskAlpha, uMaskTexture1, vMaskTexCoord1, maskCtrl1);
 
 
-    vec4 color = baseColor;
-    int color0Combine =(ctrl >> 8)&
+    vec4 color = vBaseColor;
+    int color0Combine =(ctrl >> 6)&
                                        0x3;
     if(color0Combine != 0){
-        int color0Filter =(ctrl >> 4)& 0xf;
-        vec4 color0 = filterColor(colorTexCoord0,
-                                  colorTexture0,
-                                  gammaLUT,
-                                  colorTextureSize0,
-                                  fragCoord,
-                                  framebufferSize,
-                                  filterParams0,
-                                  filterParams1,
-                                  filterParams2,
-                                  filterParams3,
-                                  filterParams4,
+        int color0Filter =(ctrl >> 4)& 0x3;
+        vec4 color0 = filterColor(vColorTexCoord0,
+                                  uColorTexture0,
+                                  uGammaLUT,
+                                  uColorTexture0Size,
+                                  gl_FragCoord . xy,
+                                  uFramebufferSize,
+                                  uFilterParams0,
+                                  uFilterParams1,
+                                  uFilterParams2,
                                   color0Filter);
         color = combineColor0(color, color0, color0Combine);
     }
@@ -630,199 +594,19 @@ vec4 calculateColor(vec2 fragCoord,
     color . a *= maskAlpha;
 
 
-    int compositeOp =(ctrl >> 10)& 0xf;
-    color = composite(color, destTexture, framebufferSize, fragCoord, compositeOp);
+    int compositeOp =(ctrl >> 8)& 0xf;
+    color = composite(color, uDestTexture, uFramebufferSize, gl_FragCoord . xy, compositeOp);
 
 
     color . rgb *= color . a;
-    return color;
+    oFragColor = color;
 }
 
 
 
 
-
-
-
-
-
-
-
-
-vec4 fetchUnscaled(sampler2D srcTexture, vec2 scale, vec2 originCoord, int entry){
-    return texture(srcTexture,(originCoord + vec2(0.5)+ vec2(entry, 0))* scale);
-}
-
-void computeTileVaryings(vec2 position,
-                         int colorEntry,
-                         sampler2D textureMetadata,
-                         ivec2 textureMetadataSize,
-                         out vec2 outColorTexCoord0,
-                         out vec4 outBaseColor,
-                         out vec4 outFilterParams0,
-                         out vec4 outFilterParams1,
-                         out vec4 outFilterParams2,
-                         out vec4 outFilterParams3,
-                         out vec4 outFilterParams4,
-                         out int outCtrl){
-    vec2 metadataScale = vec2(1.0)/ vec2(textureMetadataSize);
-    vec2 metadataEntryCoord = vec2(colorEntry % 128 * 10, colorEntry / 128);
-    vec4 colorTexMatrix0 = fetchUnscaled(textureMetadata, metadataScale, metadataEntryCoord, 0);
-    vec4 colorTexOffsets = fetchUnscaled(textureMetadata, metadataScale, metadataEntryCoord, 1);
-    vec4 baseColor = fetchUnscaled(textureMetadata, metadataScale, metadataEntryCoord, 2);
-    vec4 filterParams0 = fetchUnscaled(textureMetadata, metadataScale, metadataEntryCoord, 3);
-    vec4 filterParams1 = fetchUnscaled(textureMetadata, metadataScale, metadataEntryCoord, 4);
-    vec4 filterParams2 = fetchUnscaled(textureMetadata, metadataScale, metadataEntryCoord, 5);
-    vec4 filterParams3 = fetchUnscaled(textureMetadata, metadataScale, metadataEntryCoord, 6);
-    vec4 filterParams4 = fetchUnscaled(textureMetadata, metadataScale, metadataEntryCoord, 7);
-    vec4 extra = fetchUnscaled(textureMetadata, metadataScale, metadataEntryCoord, 8);
-    outColorTexCoord0 = mat2(colorTexMatrix0)* position + colorTexOffsets . xy;
-    outBaseColor = baseColor;
-    outFilterParams0 = filterParams0;
-    outFilterParams1 = filterParams1;
-    outFilterParams2 = filterParams2;
-    outFilterParams3 = filterParams3;
-    outFilterParams4 = filterParams4;
-    outCtrl = int(extra . x);
-}
-
-
-
-
-
-
-
-
-
-
-uniform int uLoadAction;
-uniform vec4 uClearColor;
-uniform vec2 uTileSize;
-uniform sampler2D uTextureMetadata;
-uniform ivec2 uTextureMetadataSize;
-uniform sampler2D uZBuffer;
-uniform ivec2 uZBufferSize;
-uniform sampler2D uColorTexture0;
-uniform sampler2D uMaskTexture0;
-uniform sampler2D uGammaLUT;
-uniform vec2 uColorTextureSize0;
-uniform vec2 uMaskTextureSize0;
-uniform vec2 uFramebufferSize;
-uniform ivec2 uFramebufferTileSize;
-layout(rgba8)uniform image2D uDestImage;
-
-layout(std430, binding = 0)buffer bTiles {
-
-
-
-
-
-    restrict readonly uint iTiles[];
-};
-
-layout(std430, binding = 1)buffer bFirstTileMap {
-    restrict readonly int iFirstTileMap[];
-};
-
-uint calculateTileIndex(uint bufferOffset, uvec4 tileRect, uvec2 tileCoord){
-    return bufferOffset + tileCoord . y *(tileRect . z - tileRect . x)+ tileCoord . x;
-}
-
-ivec2 toImageCoords(ivec2 coords){
-    return ivec2(coords . x, uFramebufferSize . y - coords . y);
-}
 
 void main(){
-    ivec2 tileCoord = ivec2(gl_WorkGroupID . xy);
-    ivec2 firstTileSubCoord = ivec2(gl_LocalInvocationID . xy)* ivec2(1, 4);
-    ivec2 firstFragCoord = tileCoord * ivec2(uTileSize)+ firstTileSubCoord;
-
-
-    int tileIndex = iFirstTileMap[tileCoord . x + uFramebufferTileSize . x * tileCoord . y];
-    if(tileIndex < 0 && uLoadAction != 0)
-        return;
-
-    mat4 destColors;
-    for(int subY = 0;subY < 4;subY ++){
-        if(uLoadAction == 0){
-            destColors[subY]= uClearColor;
-        } else {
-            ivec2 imageCoords = toImageCoords(firstFragCoord + ivec2(0, subY));
-            destColors[subY]= imageLoad(uDestImage, imageCoords);
-        }
-    }
-
-    while(tileIndex >= 0){
-        for(int subY = 0;subY < 4;subY ++){
-            ivec2 tileSubCoord = firstTileSubCoord + ivec2(0, subY);
-            vec2 fragCoord = vec2(firstFragCoord + ivec2(0, subY))+ vec2(0.5);
-
-            int alphaTileIndex =
-                int(iTiles[tileIndex * 4 + 2]<< 8)>> 8;
-            uint tileControlWord = iTiles[tileIndex * 4 + 3];
-            uint colorEntry = tileControlWord & 0xffff;
-            int tileCtrl = int((tileControlWord >> 16)& 0xff);
-
-            int backdrop;
-            uvec2 maskTileCoord;
-            if(alphaTileIndex >= 0){
-                backdrop = 0;
-                maskTileCoord = uvec2(alphaTileIndex & 0xff, alphaTileIndex >> 8)*
-                    uvec2(uTileSize);
-            } else {
-
-                backdrop = int(tileControlWord)>> 24;
-                maskTileCoord = uvec2(0u);
-                tileCtrl &= ~(0x3 << 0);
-            }
-
-            vec3 maskTexCoord0 = vec3(vec2(ivec2(maskTileCoord)+ tileSubCoord), backdrop);
-
-            vec2 colorTexCoord0;
-            vec4 baseColor, filterParams0, filterParams1, filterParams2, filterParams3, filterParams4;
-            int ctrl;
-            computeTileVaryings(fragCoord,
-                                int(colorEntry),
-                                uTextureMetadata,
-                                uTextureMetadataSize,
-                                colorTexCoord0,
-                                baseColor,
-                                filterParams0,
-                                filterParams1,
-                                filterParams2,
-                                filterParams3,
-                                filterParams4,
-                                ctrl);
-
-
-
-
-            vec4 srcColor = calculateColor(fragCoord,
-                                           uColorTexture0,
-                                           uMaskTexture0,
-                                           uColorTexture0,
-                                           uGammaLUT,
-                                           uColorTextureSize0,
-                                           uMaskTextureSize0,
-                                           filterParams0,
-                                           filterParams1,
-                                           filterParams2,
-                                           filterParams3,
-                                           filterParams4,
-                                           uFramebufferSize,
-                                           ctrl,
-                                           maskTexCoord0,
-                                           colorTexCoord0,
-                                           baseColor,
-                                           tileCtrl);
-
-            destColors[subY]= destColors[subY]*(1.0 - srcColor . a)+ srcColor;
-        }
-
-        tileIndex = int(iTiles[tileIndex * 4 + 0]);
-    }
-
-    for(int subY = 0;subY < 4;subY ++)
-        imageStore(uDestImage, toImageCoords(firstFragCoord + ivec2(0, subY)), destColors[subY]);
+    calculateColor(uCtrl);
 }
 

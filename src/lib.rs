@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use pathfinder_color::ColorF;
 use pathfinder_geometry::{
     rect::{RectF, RectI},
@@ -7,16 +5,17 @@ use pathfinder_geometry::{
     vector::{vec2f, vec2i, Vector2F, Vector2I},
 };
 use pathfinder_gl::{GLDevice as DeviceImpl, GLVersion};
-use pathfinder_gpu::Device;
+
 use pathfinder_renderer::{
-    concurrent::{executor::SequentialExecutor, rayon::RayonExecutor, scene_proxy::SceneProxy},
+    concurrent::{rayon::RayonExecutor, scene_proxy::SceneProxy},
     gpu::{
-        options::{DestFramebuffer, RendererLevel, RendererMode, RendererOptions},
+        options::{DestFramebuffer, RendererOptions},
         renderer::Renderer,
     },
     options::{BuildOptions, RenderTransform},
 };
-use pathfinder_svg::SVGScene;
+
+use pathfinder_svg::BuiltSVG;
 use res::MemResourceLoader;
 use thiserror::Error;
 use usvg::{Options as UsvgOptions, Tree as SvgTree};
@@ -43,8 +42,7 @@ pub enum SvgError {
 
 /// Svg 渲染器
 pub struct SvgRenderer {
-    gl_level: RendererLevel,
-
+    // gl_level: RendererLevel,
     scene_proxy: SceneProxy,
     renderer: Renderer<DeviceImpl>,
 
@@ -65,33 +63,28 @@ pub struct SvgRenderer {
 impl Default for SvgRenderer {
     fn default() -> Self {
         // GL 版本，Windows 4.0，Android EL3
+
         let gl_version = get_native_gl_version();
 
         // 为了兼容 手机，暂时用 D3D9
-        let gl_level = RendererLevel::D3D9;
+        // let gl_level = RendererLevel::D3D9;
 
         let device = DeviceImpl::new(gl_version, 0);
         let resource_loader = MemResourceLoader::default();
-
+        let begin = std::time::Instant::now();
         let renderer = Renderer::new(
             device,
             &resource_loader,
-            RendererMode { level: gl_level },
+            DestFramebuffer::full_window(Vector2I::new(1, 1)),
             RendererOptions {
                 background_color: None,
-                show_debug_ui: false,
-                dest: DestFramebuffer::Default {
-                    viewport: RectI::new(vec2i(0, 0), vec2i(1, 1)),
-                    window_size: vec2i(1, 1),
-                },
             },
         );
-
-        let scene_proxy = SceneProxy::new(gl_level, RayonExecutor);
+        println!("========== time: {:?}", begin.elapsed());
+        let scene_proxy = SceneProxy::new(RayonExecutor);
 
         Self {
-            gl_level,
-
+            // gl_level,
             renderer,
             scene_proxy,
 
@@ -120,10 +113,10 @@ impl SvgRenderer {
 
     // 设置 渲染目标
     pub fn set_target(&mut self, fbo_id: u32, target_w: i32, target_h: i32) {
-        // println!(
-        //     "============= pi_svg: set_target. fbo_id = {}, target_w = {}，target_h = {}",
-        //     fbo_id, target_w, target_h
-        // );
+        println!(
+            "============= pi_svg: set_target. fbo_id = {}, target_w = {}，target_h = {}",
+            fbo_id, target_w, target_h
+        );
 
         self.target_size = vec2i(target_w, target_h);
 
@@ -133,18 +126,20 @@ impl SvgRenderer {
         };
 
         self.fbo_id = fbo_id;
-        self.renderer.device_mut().set_default_framebuffer(fbo_id);
+        self.renderer.device.set_default_framebuffer(fbo_id);
     }
 
     // 设置 视口
     pub fn set_viewport(&mut self, x: i32, y: i32, size: Option<(i32, i32)>) {
-        // println!(
-        //     "============= pi_svg: set_viewport, x = {}, y = {}，size = {:?}",
-        //     x, y, size
-        // );
+        println!(
+            "============= pi_svg: set_viewport, x = {}, y = {}，size = {:?}",
+            x, y, size
+        );
 
         self.viewport_offset = vec2i(x, y);
         if let Some((w, h)) = size {
+            self.renderer
+                .replace_dest_framebuffer(DestFramebuffer::full_window(Vector2I::new(w, h)));
             self.viewport_size = Some(vec2i(w, h));
         }
     }
@@ -158,7 +153,7 @@ impl SvgRenderer {
             Err(e) => return Err(SvgError::Load(e.to_string())),
         };
 
-        let scene = SVGScene::from_tree_and_scene(&svg, Scene::new());
+        let scene = BuiltSVG::from_tree_and_scene(&svg, Scene::new());
         if !scene.result_flags.is_empty() {
             log::warn!(
                 "Warning: These features in the SVG are unsupported: {}.",
@@ -174,6 +169,7 @@ impl SvgRenderer {
         }
 
         self.view_box = scene.scene.view_box();
+        println!("==== view_box: {:?}", self.view_box);
 
         Ok(scene.scene)
     }
@@ -182,11 +178,16 @@ impl SvgRenderer {
         self.scene_proxy.replace_scene(scene.clone());
 
         // 注：看了 pathfinder 的源码，这里必须要每次 构建
-        Self::build_scene(
-            &mut self.scene_proxy,
-            (self.viewport_offset, *self.viewport_size.as_ref().unwrap()),
-            &self.view_box,
-        );
+        // Self::build_scene(
+        //     &mut self.scene_proxy,
+        //     (self.viewport_offset, *self.viewport_size.as_ref().unwrap()),
+        //     &self.view_box,
+        // );
+
+        let viewport = RectI::new(self.viewport_offset, *self.viewport_size.as_ref().unwrap());
+
+        self.scene_proxy
+            .set_view_box(RectF::new(Vector2F::zero(), viewport.size().to_f32()));
 
         let vp_offset = self.viewport_offset;
         let vp_size = self.viewport_size.unwrap();
@@ -208,47 +209,45 @@ impl SvgRenderer {
             gl::Disable(gl::SCISSOR_TEST);
         }
 
-        *self.renderer.options_mut() = RendererOptions {
-            show_debug_ui: false,
+        self.renderer.set_options(RendererOptions {
+            // show_debug_ui: false,
             // 注：这里的清屏，是 清全屏，将前面画的也清空掉了，所以不能用
             background_color: None,
-            dest: DestFramebuffer::Default {
-                viewport: RectI::new(vp_offset, vp_size),
-                window_size: self.target_size,
-            },
-        };
-
-        self.scene_proxy.render(&mut self.renderer);
-
-        Ok(())
-    }
-}
-
-impl SvgRenderer {
-    fn build_scene(scene_proxy: &mut SceneProxy, viewport: (Vector2I, Vector2I), view_box: &RectF) {
-        // println!(
-        //     "pi_svg, build_scene: viewport = {:?}, view_box = {:?}",
-        //     viewport, view_box
-        // );
-
-        let viewport = RectI::new(viewport.0, viewport.1);
-
-        scene_proxy.set_view_box(RectF::new(Vector2F::zero(), viewport.size().to_f32()));
+            // dest: DestFramebuffer::Default {
+            //     viewport: RectI::new(vp_offset, vp_size),
+            //     window_size: self.target_size,
+            // },
+        });
 
         let scale = f32::min(
-            viewport.width() as f32 / view_box.width(),
-            viewport.height() as f32 / view_box.height(),
+            viewport.width() as f32 / self.view_box.width(),
+            viewport.height() as f32 / self.view_box.height(),
         );
 
         // https://www.zhangxinxu.com/wordpress/2014/08/svg-viewport-viewbox-preserveaspectratio/
         // 默认是 preserveAspectRatio="xMidYMid meet" 中心对齐
-        let origin = viewport.size().to_f32() * 0.5 - view_box.size() * (scale * 0.5);
+
+        let origin = viewport.size().to_f32() * 0.5 - self.view_box.size() * (scale * 0.5);
+        // self.renderer.dest_framebuffer().window_size(device)
+        // let origin = Vector2F::new(0., 0.);
+        // let y = 720 - viewport.height();
+        // let origin = Vector2F::new(0., y as f32);
+
+        println!(
+            "===================== origin: {:?}, scale: {}",
+            origin, scale
+        );
         let camera = Transform2F::from_scale(scale).translate(origin);
 
-        scene_proxy.build(BuildOptions {
-            transform: RenderTransform::Transform2D(camera),
-            ..Default::default()
-        });
+        self.scene_proxy.build_and_render(
+            &mut self.renderer,
+            BuildOptions {
+                transform: RenderTransform::Transform2D(camera),
+                ..Default::default()
+            },
+        );
+
+        Ok(())
     }
 }
 
@@ -259,5 +258,5 @@ fn get_native_gl_version() -> GLVersion {
 
 #[cfg(target_os = "windows")]
 fn get_native_gl_version() -> GLVersion {
-    GLVersion::GL4
+    GLVersion::GL3
 }

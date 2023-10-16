@@ -13,15 +13,13 @@
 
 
 precision highp float;
+precision highp sampler2D;
 
-
-
-
+uniform vec4 uColor;
 
 out vec4 oFragColor;
 
 void main(){
-
-    oFragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    oFragColor = vec4(uColor . rgb, 1.0)* uColor . a;
 }
 

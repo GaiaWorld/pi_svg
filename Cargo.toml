@@ -17,14 +17,14 @@ usvg = "0.23"
 
 pi_hash = "0.1"
 
-pathfinder_color = { git = "https://github.com/GaiaWorld/pathfinder.git"}
-pathfinder_geometry = { git = "https://github.com/GaiaWorld/pathfinder.git"}
-pathfinder_gl = { git = "https://github.com/GaiaWorld/pathfinder.git"}
-pathfinder_gpu = { git = "https://github.com/GaiaWorld/pathfinder.git"}
-pathfinder_renderer = { git = "https://github.com/GaiaWorld/pathfinder.git"}
-pathfinder_resources = { git = "https://github.com/GaiaWorld/pathfinder.git"}
-pathfinder_svg = { git = "https://github.com/GaiaWorld/pathfinder.git"}
-pathfinder_simd = { git = "https://github.com/GaiaWorld/pathfinder.git"}
+pathfinder_color = "0.5"
+pathfinder_geometry = "0.5"
+pathfinder_gl = "0.5"
+pathfinder_gpu = "0.5"
+pathfinder_renderer = "0.5"
+pathfinder_resources = "0.5"
+pathfinder_svg = { git = "https://github.com/GaiaWorld/pathfinder_svg.git" }
+pathfinder_simd = "0.5"
 
 [dev-dependencies]
 glutin = "0.29"

@@ -12,26 +12,20 @@
 
 
 
-#extension GL_GOOGLE_include_directive : enable
-
 precision highp float;
+precision highp sampler2D;
 
+uniform sampler2D uAreaLUT;
 
+in vec2 vFrom;
+in vec2 vTo;
 
+out vec4 oFragColor;
 
+void main(){
 
+    vec2 from = vFrom, to = vTo;
 
-
-
-
-
-
-
-
-
-
-
-vec4 computeCoverage(vec2 from, vec2 to, sampler2D areaLUT){
 
     vec2 left = from . x < to . x ? from : to, right = from . x < to . x ? to : from;
 
@@ -46,18 +40,6 @@ vec4 computeCoverage(vec2 from, vec2 to, sampler2D areaLUT){
 
 
     float dX = window . x - window . y;
-    return texture(areaLUT, vec2(y + 8.0, abs(d * dX))/ 16.0)* dX;
-}
-
-
-uniform sampler2D uAreaLUT;
-
-in vec2 vFrom;
-in vec2 vTo;
-
-out vec4 oFragColor;
-
-void main(){
-    oFragColor = computeCoverage(vFrom, vTo, uAreaLUT);
+    oFragColor = vec4(texture(uAreaLUT, vec2(y + 8.0, abs(d * dX))/ 16.0). r * dX);
 }
 
